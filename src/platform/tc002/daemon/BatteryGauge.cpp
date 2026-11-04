@@ -59,7 +59,10 @@ void BatteryGauge::learn(int millivolts, bool usb, int64_t nowMs, int load) {
   if (paired) {
     const double estimate = static_cast<double>(lastMillivolts_ - millivolts) / (load - lastLoad_);
     // A step against the load is noise on a flat cell; it counts as no sag rather than skewing the median.
-    if (estimate <= kMaxSag) {
+    if (estimate > kMaxSag) {
+      ++sagRejected_;
+    } else {
+      pairs_[sagNext_] = {nowMs, lastLoad_, load, lastMillivolts_, millivolts};
       sags_[sagNext_] = std::max(0.0, estimate);
       sagNext_ = (sagNext_ + 1) % sags_.size();
       if (sagCount_ < sags_.size()) ++sagCount_;
@@ -78,6 +81,13 @@ void BatteryGauge::learn(int millivolts, bool usb, int64_t nowMs, int load) {
     lastUsb_ = usb;
     lastAt_ = nowMs;
   }
+}
+
+std::size_t BatteryGauge::sagPairs(std::array<SagPair, 9>& out) const {
+  static_assert(kSagSamples == 9, "sagPairs takes kSagSamples pairs");
+  const std::size_t first = sagCount_ < kSagSamples ? 0 : sagNext_;
+  for (std::size_t i = 0; i < sagCount_; ++i) out[i] = pairs_[(first + i) % kSagSamples];
+  return sagCount_;
 }
 
 void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs, int load) {

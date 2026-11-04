@@ -42,6 +42,12 @@ class LoadTracker {
 
 class BatteryGauge {
  public:
+  // One reading pair the sag was learned from, for the status.
+  struct SagPair {
+    int64_t atMs;
+    int fromLoad, toLoad, fromMillivolts, toMillivolts;
+  };
+
   static constexpr std::size_t kWindow = 31;
   static constexpr int64_t kSpacingMs = 9000;  // the daemon queries every 10 s
   static constexpr int kRiseMargin = 3;
@@ -56,6 +62,9 @@ class BatteryGauge {
   int percent() const { return percent_; }  // -1 before the first sample
   double sag() const { return sag_; }        // mV per per mille of display load, 0 until learned
   int lastCompensated() const { return compensated_; }
+  // The pairs behind sag(), oldest first, and the pairs dropped as larger than kMaxSag.
+  std::size_t sagPairs(std::array<SagPair, 9>& out) const;
+  unsigned sagRejected() const { return sagRejected_; }
 
   static int estimate(int millivolts, bool usb);
 
@@ -69,6 +78,8 @@ class BatteryGauge {
   unsigned risen_ = 0;
   int64_t acceptedAt_ = 0;
   std::array<double, kSagSamples> sags_{};
+  std::array<SagPair, kSagSamples> pairs_{};
+  unsigned sagRejected_ = 0;
   std::size_t sagCount_ = 0, sagNext_ = 0;
   double sag_ = 0;
   int lastMillivolts_ = -1, lastLoad_ = -1;
