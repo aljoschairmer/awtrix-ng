@@ -312,6 +312,14 @@ void displayLoad() {
   board.show(canvas);
   const int dimmed = board.takeLoad();
   require(dimmed > 0 && dimmed < 1000 / 16, "a dimmer row of white draws less than its share at full brightness");
+  // The bench run of 2026-11-04 measured its battery sag against this load.
+  board.applyColorGrade(awtrix::render::GradeParams{});
+  board.setBrightness(150);
+  for (int y = 0; y < 16; ++y)
+    for (int x = 0; x < 52; ++x) canvas.setPixel(x, y, 0xFFFFFFu);
+  board.show(canvas);
+  const int white150 = board.takeLoad();
+  require(white150 >= 580 && white150 <= 600, "full white at brightness 150 is about 591 per mille");
 }
 
 int main() {

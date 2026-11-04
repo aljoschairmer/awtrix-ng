@@ -229,6 +229,7 @@ class SupervisorChannel(unittest.TestCase):
         device = self.eventually(lambda: self.get('/api/v1/device'), lambda value: 'batteryPercent' in value)
         self.assertEqual(76, device['batteryPercent'])
         self.assertAlmostEqual(4.01, device['batteryVoltage'], places=2)
+        self.assertEqual(4012, device['batteryMillivolts'])
         self.assertFalse(device['lowBattery'])
         for absent in ('temperature', 'humidity', 'pressureHpa', 'lightLevel'):
             self.assertNotIn(absent, device)

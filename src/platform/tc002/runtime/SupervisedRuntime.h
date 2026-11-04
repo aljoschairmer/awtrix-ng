@@ -63,6 +63,8 @@ class SupervisedRuntime : public DeviceFactsSource {
   void configAccepted(DeviceConfig& next);
   void addFacts(DeviceFacts& facts) const override;
   void writeMembers(api::JsonWriter& json) const override;
+  // The display load the runtime last reported to the supervisor, shown in /api/v1/device.
+  void setPanelLoad(int perMille) { panelLoad_ = perMille; }
   // GET /api/v1/system/wifi-scan as on ESP32: 202 while a scan runs, then the result once.
   int wifiScan(int64_t nowMs, std::string& body);
   bool accessPoint() const { return network_.link == tc002::WifiLink::AccessPoint; }
@@ -92,6 +94,7 @@ class SupervisedRuntime : public DeviceFactsSource {
   tc002::PowerStatus power_;
   tc002::NetworkStatus network_;
   bool powerKnown_ = false, usbKnown_ = false;
+  int batteryMillivolts_ = -1, panelLoad_ = -1;
   bool networkKnown_ = false;
   Scan scan_ = Scan::Idle;
   int64_t scanStartedMs_ = 0;
