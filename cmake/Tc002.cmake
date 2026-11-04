@@ -141,6 +141,7 @@ add_library(tc002d_core STATIC
   "${TC002D_DIR}/EventLoop.cpp"
   "${TC002D_DIR}/HardwareId.cpp"
   "${TC002D_DIR}/HardwareLease.cpp"
+  "${TC002D_DIR}/McuDriverControl.cpp"
   "${TC002D_DIR}/McuFrame.cpp"
   "${TC002D_DIR}/McuPcm.cpp"
   "${TC002D_DIR}/McuStream.cpp"

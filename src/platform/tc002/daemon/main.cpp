@@ -26,6 +26,7 @@
 #include "platform/tc002/daemon/Log.h"
 #include "platform/tc002/daemon/Autostart.h"
 #include "platform/tc002/daemon/BtService.h"
+#include "platform/tc002/daemon/McuDriverControl.h"
 #include "platform/tc002/daemon/McuService.h"
 #include "platform/tc002/daemon/Options.h"
 #include "platform/tc002/daemon/PropertyWorkspace.h"
@@ -435,6 +436,7 @@ int runDaemon(const DaemonOptions& options) {
     json.endObject();
     return out;
   });
+  addDriverRegisterCommands(control, mcu);
   control.add("restart-runtime", [&](std::string_view) {
     Log::line("control", "runtime restart requested");
     runtime.restart(posix::monotonicMs());

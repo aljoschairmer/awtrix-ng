@@ -6,8 +6,11 @@
 
 #include <cerrno>
 #include <cstring>
+#include <map>
+#include <string>
 #include <vector>
 
+#include "platform/tc002/daemon/McuDriverControl.h"
 #include "platform/tc002/daemon/McuService.h"
 #include "support.h"
 
@@ -301,6 +304,116 @@ void pcmConversation() {
   check(complete && !valid && service.stopped(), "timeout finishes pending callback and shutdown");
 }
 
+// The control commands as the daemon registers them.
+struct Commands : ControlRegistry {
+  std::map<std::string, Handler> handlers;
+  void add(std::string command, Handler handler) override { handlers[command] = std::move(handler); }
+  std::string run(const std::string& command, std::string_view payload = {}) { return handlers.at(command)(payload); }
+};
+
+bool has(const std::string& text, const char* part) { return text.find(part) != std::string::npos; }
+
+// Brings a service to the point where only the periodic power queries remain.
+void bootTo(Mcu& device, McuService& mcu, int64_t now, const char* version) {
+  mcu.start(now);
+  device.take();
+  const std::string text = version;
+  device.send(frame(0x11, std::vector<uint8_t>(text.begin(), text.end())));
+  serve(mcu, now);
+  device.take();
+  device.send(frame(0x08, {}));
+  serve(mcu, now);
+  device.take();
+  device.send(frame(0x02, {1}));
+  serve(mcu, now);
+  device.take();
+  device.send(frame(0x03, {0x4c, 0x0c, 0x29}));
+  serve(mcu, now);
+  device.take();
+}
+
+void driverRegisters() {
+  Mcu device;
+  DeviceState state;
+  McuOptions options;
+  options.path = device.slave;
+  McuService mcu(state, options);
+  Commands commands;
+  addDriverRegisterCommands(commands, mcu);
+  int64_t now = 10000;
+  check(has(commands.run("mcu-register-read", "0c"), "\"ok\":false"), "no register requests before the firmware is known");
+  bootTo(device, mcu, now, "V1.0.17");
+  check(mcu.driverRegistersAvailable(), "register requests on V1.0.17");
+
+  check(has(commands.run("mcu-register-read", "21"), "outside"), "registers past 0x20 are refused");
+  check(has(commands.run("mcu-register-read", "zz"), "payload"), "a malformed register is refused");
+  check(has(commands.run("mcu-register-write", "0c 08 18"), "payload"), "a write needs three values");
+  check(has(commands.run("mcu-register-write", "0c 08 18 30"), "read register 0x0c first"),
+        "a register is written only after it was read");
+  check(commands.run("mcu-register-read", "0x0c") == "{\"ok\":true}", "a read is queued");
+  check(mcu.nextDeadlineMs() <= now, "a queued request is due at once");
+  mcu.onTime(now);
+  check(device.take() == frame(0x13, {0x0c, 0x0c, 0x0c}), "read: command 13 names the register for each colour");
+  check(device.take(30).empty(), "one request in flight");
+  device.send(frame(0x13, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
+  serve(mcu, now);
+  std::string table = commands.run("mcu-registers");
+  check(has(table, "\"register\":12,\"value\":[8,24,48],\"original\":[8,24,48],\"changed\":false"),
+        "the answer fills the table: " + table);
+
+  check(commands.run("mcu-register-write", "0c 10 18 30") == "{\"ok\":true}", "a write is queued");
+  mcu.onTime(now);
+  check(device.take() == frame(0x12, {0x0c, 0x10, 0x0c, 0x18, 0x0c, 0x30}),
+        "write: command 12 with a word per colour, register high");
+  device.send(frame(0x12, {0x0c, 0x10, 0x0c, 0x18, 0x0c, 0x30}));
+  serve(mcu, now);
+  check(device.take() == frame(0x13, {0x0c, 0x0c, 0x0c}), "the write is read back");
+  device.send(frame(0x13, {0x0c, 0x10, 0x0c, 0x18, 0x0c, 0x30}));
+  serve(mcu, now);
+  table = commands.run("mcu-registers");
+  check(has(table, "\"value\":[16,24,48],\"original\":[8,24,48],\"changed\":true") && has(table, "\"writes\":1"),
+        "the table keeps the first value and marks the change: " + table);
+
+  check(commands.run("mcu-register-restore") == "{\"ok\":true}", "restore is queued");
+  mcu.onTime(now);
+  check(device.take() == frame(0x12, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}), "restore writes the first value");
+  device.send(frame(0x12, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
+  serve(mcu, now);
+  device.take();
+  device.send(frame(0x13, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
+  serve(mcu, now);
+  check(has(commands.run("mcu-registers"), "\"changed\":false"), "restored");
+
+  check(commands.run("mcu-register-read", "14") == "{\"ok\":true}", "another read");
+  mcu.onTime(now);
+  device.take();
+  device.send(frame(0x13, {0, 0, 0, 0, 0, 0}));
+  serve(mcu, now);
+  table = commands.run("mcu-registers");
+  check(has(table, "did not answer for LED driver register 0x14") && !has(table, "\"register\":20"),
+        "an answer for no register is an error, not a value: " + table);
+
+  check(commands.run("mcu-register-read", "all") == "{\"ok\":true}", "all registers are queued");
+  now += 1000;
+  mcu.onTime(now);
+  check(isQuery(device.take(), 0x02), "a due USB query goes before queued register reads");
+  device.send(frame(0x02, {1}));
+  serve(mcu, now);
+  check(device.take() == frame(0x13, {0x02, 0x02, 0x02}), "then the first register");
+  now += options.replyTimeoutMs;
+  mcu.onTime(now);
+  check(device.take() == frame(0x13, {0x03, 0x03, 0x03}) && has(commands.run("mcu-registers"), "no answer"),
+        "a silent MCU costs that request only");
+
+  Mcu other;
+  McuOptions otherOptions;
+  otherOptions.path = other.slave;
+  McuService newer(state, otherOptions);
+  bootTo(other, newer, now, "V1.0.18");
+  check(!newer.driverRegistersAvailable() && !newer.readDriverRegister(0x0c).empty(),
+        "another MCU firmware gets no register requests");
+}
+
 }
 
 int main() {
@@ -309,5 +422,6 @@ int main() {
   conversation();
   missingUart();
   pcmConversation();
+  driverRegisters();
   return tc002d_test::finish("tc002d mcu");
 }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <string>
 
@@ -70,6 +72,17 @@ class McuService : public Service {
   bool startStream(int epoch, mcu::Stream::Consumer consumer, int64_t nowMs);
   void controlStream(int epoch, bool stop, int64_t nowMs);
 
+  // The LED driver registers of the stock MCU firmware (McuFrame.h), for bench work over the
+  // control socket. Requests queue and run between the power queries, never during a capture,
+  // stream or firmware transfer. A register is written only after it was read, so its first value
+  // can be restored. Each returns an empty string when queued, otherwise why not.
+  bool driverRegistersAvailable() const;
+  std::string readDriverRegister(uint8_t reg);
+  std::string readDriverRegisters();
+  std::string writeDriverRegister(uint8_t reg, const uint8_t (&values)[3]);
+  std::string restoreDriverRegisters();
+  void appendDriverRegisters(api::JsonWriter& json) const;
+
  private:
   bool openUart(int64_t nowMs);
   void closeUart(int64_t nowMs, const char* reason);
@@ -86,6 +99,24 @@ class McuService : public Service {
   void finishStream(int64_t nowMs);
   void cancelPendingStream(const char* reason, int64_t nowMs);
   bool writeFrame(const uint8_t* bytes, std::size_t length, uint8_t command, int64_t nowMs);
+  bool sendDriverJob(int64_t nowMs);
+  void driverReply(const mcu::Frame& frame);
+
+  struct DriverRegister {
+    bool known = false, changed = false;
+    uint8_t value[3]{}, original[3]{};
+  };
+  struct DriverJob {
+    bool write = false;
+    uint8_t reg = 0;
+    uint8_t values[3]{};
+  };
+  static constexpr std::size_t kDriverQueue = 64;
+  std::array<DriverRegister, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> driver_{};
+  std::deque<DriverJob> driverJobs_;
+  DriverJob driverSent_;
+  uint64_t driverReads_ = 0, driverWrites_ = 0, driverFailures_ = 0;
+  std::string driverError_;
 
   DeviceState& state_;
   McuOptions options_;
