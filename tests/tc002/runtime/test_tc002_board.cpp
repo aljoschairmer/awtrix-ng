@@ -287,8 +287,36 @@ void optionalTimingScope() {
 
 }
 
+void displayLoad() {
+  auto state = std::make_shared<State>();
+  awtrix::Tc002Board board(fake(state));
+  board.begin();
+  require(board.takeLoad() == -1, "no load before a frame is shown");
+  board.applyColorGrade(linearGrade());
+  board.setBrightness(255);
+  awtrix::Canvas canvas(52, 16);
+  board.show(canvas);
+  require(board.takeLoad() == 0, "a black frame draws no display load");
+  for (int y = 0; y < 16; ++y)
+    for (int x = 0; x < 52; ++x) canvas.setPixel(x, y, 0xFFFFFFu);
+  board.show(canvas);
+  require(board.takeLoad() == 1000, "full white at full brightness is the whole load");
+  board.show(canvas);
+  canvas.clear();
+  board.show(canvas);
+  require(board.takeLoad() == 500, "the load is the mean of the frames since the last report");
+  require(board.takeLoad() == -1, "each frame counts once");
+  for (int x = 0; x < 52; ++x) canvas.setPixel(x, 0, 0xFFFFFFu);
+  board.show(canvas);
+  board.setBrightness(40);
+  board.show(canvas);
+  const int dimmed = board.takeLoad();
+  require(dimmed > 0 && dimmed < 1000 / 16, "a dimmer row of white draws less than its share at full brightness");
+}
+
 int main() {
   packingAndShutdown();
+  displayLoad();
   continuousPipelineAndStillContent();
   brightnessAndGrade();
   failuresCloseWithoutMoreWrites();

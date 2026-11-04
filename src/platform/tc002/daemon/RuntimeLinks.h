@@ -24,6 +24,8 @@ struct RuntimeLinks {
   std::function<bool()> microphoneStreamAvailable;
   std::function<bool(int epoch, StreamReply reply)> microphoneStreamStart;
   std::function<void(int epoch, bool stop)> microphoneStreamControl;
+  // The display load the runtime reports (SupervisorProtocol.h kMaxPanelLoad).
+  std::function<void(int perMille)> panelLoad;
 };
 
 }  // namespace awtrix::tc002d

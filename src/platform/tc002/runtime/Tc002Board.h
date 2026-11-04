@@ -43,6 +43,9 @@ class Tc002Board final : public LinuxBoard {
   void show(const Canvas& canvas) override;
   void setBrightness(uint8_t brightness) override;
   void applyColorGrade(const render::GradeParams& grade) override;
+  // The mean light of the frames shown since the last call, in per mille of a full-white frame at
+  // full brightness (kPanelLight), the display's share of the battery current; -1 without frames.
+  int takeLoad();
 
  private:
   bool submit(unsigned transfers);
@@ -53,6 +56,7 @@ class Tc002Board final : public LinuxBoard {
   LinuxPanelTiming* timing_ = nullptr;
   render::ColorGrade grade_;
   std::string error_;
+  uint64_t lightSum_ = 0, lightFrames_ = 0;
   bool ready_ = false;
   bool acquired_ = false;
 };

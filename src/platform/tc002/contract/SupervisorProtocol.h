@@ -107,6 +107,11 @@ struct LogLine {
   std::string text;
 };
 
+// Sent by the runtime every few seconds: the mean light of the frames shown since the last report,
+// in per mille of a full-white frame at full brightness. The supervisor's battery gauge corrects
+// the cell's voltage sag with it.
+constexpr int kMaxPanelLoad = 1000;
+
 // The runtime verified a package and hands it to the supervisor for installation.
 struct UpdateReady {
   std::string package;
@@ -138,6 +143,7 @@ enum class MessageType : uint8_t {
   MicrophonePcm,
   MicrophoneStreamControl,
   MicrophoneStreamEvent,
+  PanelLoad,
 };
 
 struct SupervisorMessage {
@@ -160,6 +166,7 @@ struct SupervisorMessage {
   UpdateReady updateReady;
   RuntimeReady ready;
   LogLine log;
+  int panelLoad = -1;
 };
 
 const char* wifiLinkName(WifiLink link);
@@ -185,6 +192,8 @@ std::string encodeWifiScan();
 std::string encodeWifiScanResult(const std::vector<WifiNetwork>& networks);
 std::string encodeUpdateReady(const UpdateReady& ready);
 std::string encodeReady(const RuntimeReady& ready);
+// Empty outside 0 to kMaxPanelLoad.
+std::string encodePanelLoad(int perMille);
 // Cuts the text to kMaxLogText bytes at a character boundary; empty for an invalid component.
 std::string encodeLog(const LogLine& line);
 

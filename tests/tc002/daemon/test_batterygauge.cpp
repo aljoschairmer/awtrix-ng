@@ -80,7 +80,8 @@ void discharging() {
   const int start = gauge.percent();
   check(start > 0 && start < 100, "a partly charged cell on battery");
   now = feed(gauge, 4000, false, kWindow, now);
-  check(gauge.percent() == start, "a lighter load does not raise it");
+  check(gauge.percent() == start, "a lighter load for a window does not raise it");
+  now = feed(gauge, 3950, false, kWindow, now);
   now = feed(gauge, 3700, false, kWindow / 2, now);
   check(gauge.percent() == start, "a load for less than half the window is filtered out");
   now = feed(gauge, 3950, false, kWindow, now);
@@ -118,6 +119,68 @@ void startHolds() {
   check(gauge.percent() == first, "and the boot load does not count once the window is full");
 }
 
+void provisionalStart() {
+  // The first sample came while Wi-Fi connected at boot; the cell was fuller than it said.
+  BatteryGauge gauge;
+  int64_t now = feed(gauge, 3700, false, 1, 0);
+  const int first = gauge.percent();
+  now = feed(gauge, 4000, false, kWindow - 1, now);
+  check(gauge.percent() == BatteryGauge::estimate(4000, false) && gauge.percent() > first,
+        "the first full window replaces a provisional first sample, also upwards");
+  feed(gauge, 4000, false, 3 * kWindow, now);
+  check(gauge.percent() == BatteryGauge::estimate(4000, false), "and holds after that");
+}
+
+void slowRise() {
+  BatteryGauge gauge;
+  int64_t now = feed(gauge, 3950, false, kWindow, 0);
+  const int start = gauge.percent();
+  now = feed(gauge, 3960, false, 4 * kWindow, now);
+  check(gauge.percent() == start, "a reading less than the margin above does not raise it");
+  now = feed(gauge, 4050, false, kWindow + kWindow / 2, now);
+  check(gauge.percent() == start + 1, "a whole window clearly above raises it by one");
+  now = feed(gauge, 4050, false, 2 * kWindow, now);
+  check(gauge.percent() == start + 3, "then by one per window");
+  feed(gauge, 3900, false, kWindow, now);
+  check(gauge.percent() == BatteryGauge::estimate(3900, false), "a lower reading still lowers it at once");
+}
+
+// A cell that sags 0.5 mV per per mille of display load, against kReferenceLoad.
+int sagged(int restingAtReference, int load) {
+  return restingAtReference - (load - BatteryGauge::kReferenceLoad) / 2;
+}
+
+void loadCompensation() {
+  BatteryGauge learning, blind;
+  int64_t now = 0;
+  for (int i = 0; i < 3 * kWindow; ++i, now += kStep) {
+    const int load = i % 2 ? 450 : 50;  // a bright app and the clock take turns
+    learning.sample(sagged(3950, load), false, now, load);
+    blind.sample(sagged(3950, load), false, now);
+  }
+  check(learning.sag() > 0.45 && learning.sag() < 0.55, "the sag is learned from load steps");
+  check(learning.percent() == BatteryGauge::estimate(3950, false),
+        "with the sag learned the bright app does not count against the charge");
+  check(blind.percent() < learning.percent(), "without the load the bright app lowers it");
+  check(learning.lastCompensated() == 3950, "readings move to the reference load");
+
+  BatteryGauge charging;
+  now = 0;
+  for (int i = 0; i < 2 * kWindow; ++i, now += kStep) {
+    const int load = i % 2 ? 450 : 50;
+    charging.sample(sagged(3950, load), true, now, load);
+  }
+  check(charging.sag() == 0 && charging.lastCompensated() == sagged(3950, 450),
+        "on USB the charger holds the voltage: nothing is learned or moved");
+
+  BatteryGauge steady;
+  now = feed(steady, 3950, false, kWindow, 0);
+  for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 3) - 1, false, now, 60 + (i % 2) * 10);
+  check(steady.sag() == 0, "small load changes teach nothing");
+  for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 2) * 40, false, now, i % 2 ? 450 : 50);
+  check(steady.sag() == 0, "a voltage that rises with the load is not sag");
+}
+
 void spacingAndUnknown() {
   BatteryGauge gauge;
   gauge.sample(-1, false, 0);
@@ -137,6 +200,9 @@ int main() {
   discharging();
   usbChanges();
   startHolds();
+  provisionalStart();
+  slowRise();
+  loadCompensation();
   spacingAndUnknown();
   return tc002d_test::finish("tc002d battery gauge");
 }

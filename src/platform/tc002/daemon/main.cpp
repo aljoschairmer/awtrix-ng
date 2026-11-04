@@ -413,6 +413,7 @@ int runDaemon(const DaemonOptions& options) {
     if (runtimeChild) runtimeChild->bluetoothStatus(status);
   });
   links.bluetooth = [&](bool on) { bluetooth.request(on); };
+  links.panelLoad = [&](int perMille) { mcu.setPanelLoad(perMille, posix::monotonicMs()); };
   connectMicrophone(links, mcu, loop, update);
   runtimeOptions.bluetooth = true;
   RuntimeChild runtime(state, lease, runtimeOptions, links);

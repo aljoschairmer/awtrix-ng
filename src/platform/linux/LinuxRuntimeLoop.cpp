@@ -63,6 +63,11 @@ bool LinuxRuntime::runFrame() {
   const int64_t renderEndedUs = performance.now();
   board().show(app_->canvas());
   const int64_t displayEndedUs = performance.now();
+  if (o_.supervised && tc002_ && now >= nextPanelLoad_) {
+    nextPanelLoad_ = now + kPanelLoadMs;
+    const int load = tc002_->takeLoad();
+    if (load >= 0) link_.send(tc002::encodePanelLoad(load));
+  }
   if (!board().displayReady()) {
     std::fprintf(stderr, "Display output failed: %s\n", tc002_ ? tc002_->error().c_str() : board().name());
     displayFailed_ = true;

@@ -168,7 +168,7 @@ handlers.
 | Service | Class | What it owns |
 |---|---|---|
 | hardware lease | `HardwareLease` | the board model check, the USB device role, the panel latch GPIO35 (exported, output, idle high) with a snapshot of the SPI settings restored on shutdown, `EVIOCGRAB` on the key and knob devices, handed to the runtime as descriptors 100 and 101 |
-| MCU | `McuService` | the MCU UART (raw 1.5 Mbaud 8N1), its only owner: firmware version and AWTRIX identity, USB power every second, battery voltage every ten seconds (`BatteryGauge` derives the percentage; the MCU's own percentage is not used), microphone capture on demand ([Microphone](microphone.md)), MCU firmware updates ([MCU updates](mcu-update.md)) |
+| MCU | `McuService` | the MCU UART (raw 1.5 Mbaud 8N1), its only owner: firmware version and AWTRIX identity, USB power every second, battery voltage every ten seconds (`BatteryGauge` derives the percentage, see [Battery percentage](#battery-percentage); the MCU's own percentage is not used), microphone capture on demand ([Microphone](microphone.md)), MCU firmware updates ([MCU updates](mcu-update.md)) |
 | Wi-Fi | `WifiService` | ADB over TCP off before anything associates, the stock supplicant stopped, the release's aic8800 pair loaded when `wlan0` is missing (`aicwf_dbg_level=0`), our own `wpa_supplicant` with a generated configuration (the saved network, or the setup access point when there is none or it does not connect), the link state from its control interface; the credential record in `/data/awtrix-ng/network` holds the SSID and the derived PSK, never the passphrase |
 | Bluetooth | `BtService` | attaches the Bluetooth half of the AIC8800DC on `/dev/ttyS3` while the runtime asks for it, and gives it back ([Bluetooth](bluetooth.md)) |
 | IP | `IpService`, `IpController` | a fixed address from the runtime's `address` message, otherwise `udhcpc` on `wlan0` whose callback records are applied through rtnetlink (for the setup access point: `192.168.4.1`, `udhcpd` and captive DNS), our `resolv.conf` bind-mounted over `/etc/resolv.conf`, SNTP, the kernel hostname (`awtrixng-` and the last six hex digits of the MAC unless set in the web UI) and an mDNS responder for `<hostname>.local` with `_awtrixng._tcp` (TXT `id`, `name`, `type`) |
@@ -252,7 +252,9 @@ capacity), `power`, `network`, `time`, `bluetooth`, `microphonePcm`, `microphone
 `wifiScanResult` and `log`. The runtime sends `hello`, `ready` (board, panel size and input, once its
 HTTP listener is bound and its first frame is on the panel), `wifi` (credentials from the web UI),
 `ntp`, `hostname`, `address` (the fixed IPv4 setup, or DHCP), `reboot`, `factoryReset`, `wifiScan`,
-`bluetooth`, `microphonePcmRequest`, `microphoneStreamControl` and `updateReady`. The daemon's `hello`
+`bluetooth`, `microphonePcmRequest`, `microphoneStreamControl`, `updateReady` and, every 2 s,
+`panelLoad` (the mean light of the frames shown, in per mille of full white at full brightness, for
+the battery gauge). The daemon's `hello`
 goes first in every snapshot. When the channel closes, the runtime saves its state and stops.
 
 The TC002 code of the runtime is in `src/platform/tc002/runtime/` unless noted:
@@ -441,6 +443,29 @@ update state, the start counters and the loader's logs; `restore-stock` brings t
 [Install tools](install-tools.md) describes each command. End users install with the
 [desktop installer](desktop-installer.md), which runs the same steps; the
 [browser image tools](browser-image.md) build the packages it and the browser installer use.
+
+### Battery percentage
+
+The MCU measures the cell once per reading, under load, and its own percentage maps 3.5 to 4.2 V
+linearly. `BatteryGauge` (`src/platform/tc002/daemon/`) works from the voltage instead:
+
+- **Window.** The median of the last 31 readings, at least 9 s apart (about five minutes), goes
+  through a discharge and a charge curve measured on a TC002 at full brightness.
+- **Start.** The first reading gives a provisional percentage. The first full window replaces it,
+  also upwards, so a reading taken while Wi-Fi connects at boot does not stay.
+- **On battery** the percentage falls with the median at once. It rises only after a whole window
+  at least 3 points above it, and then by one per window.
+- **On USB** it only rises, up to 100 % at the charger's full voltage. After every USB change it
+  holds until the window is full of new readings.
+- **Display load.** The display draws most of the current, and the cell's voltage sags with it.
+  The runtime reports the load (`panelLoad`). From two readings 5 to 30 s apart whose load differs by
+  at least 40 per mille, the gauge estimates the sag per per mille; the median of the last nine
+  estimates counts once there are three. On battery each reading then moves to a load of
+  50 per mille, an assumed typical load while the curves were measured. On USB nothing is learned
+  or moved.
+
+`ctl status` shows the learned `batterySag` (mV per per mille), the current `panelLoad` and the last
+`batteryCompensatedMillivolts` under `mcu`.
 
 ### Debugging on the clock
 

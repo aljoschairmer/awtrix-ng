@@ -12,26 +12,50 @@ namespace awtrix::tc002d {
 //
 // The median of the last kWindow samples, at least kSpacingMs apart (about five minutes), goes
 // through curves measured on a TC002, so short loads such as a sound do not count. The first sample
-// sets the percentage; after that and after every USB change it holds until the window is full of
-// new samples. On battery it only falls, along the discharge curve. On USB it only rises, along the
-// charge curve up to 100 % at the charger's full voltage. Nothing the MCU reports tells how far the
-// charger is past that point, so 100 % comes before the charge light turns green.
+// gives a provisional percentage, which the first full window replaces. After a USB change the
+// percentage holds until the window is full of new samples. On battery it falls along the discharge
+// curve, and rises by one only after a whole window kRiseMargin above it. On USB it only rises,
+// along the charge curve up to 100 % at the charger's full voltage. Nothing the MCU reports tells
+// how far the charger is past that point, so 100 % comes before the charge light turns green.
+//
+// The display draws most of the current, and the cell's voltage sags with it. With the display
+// load (per mille of a full-white frame at full brightness, Tc002Board), the gauge learns the sag
+// per per mille from readings kLearnMinMs to kLearnMaxMs apart whose load differs by kMinLoadStep,
+// and on battery moves each reading to kReferenceLoad, the load the curves are taken for.
 class BatteryGauge {
  public:
   static constexpr std::size_t kWindow = 31;
   static constexpr int64_t kSpacingMs = 9000;  // the daemon queries every 10 s
+  static constexpr int kRiseMargin = 3;
+  static constexpr int kReferenceLoad = 50;
+  static constexpr int kMinLoadStep = 40;
+  static constexpr int64_t kLearnMinMs = 5000, kLearnMaxMs = 30000;
+  static constexpr double kMaxSag = 3.0;  // mV per per mille; larger estimates are not sag
+  static constexpr std::size_t kSagSamples = 9;
 
-  void sample(int millivolts, bool usb, int64_t nowMs);
+  // load: -1 when unknown; the reading then counts as it is.
+  void sample(int millivolts, bool usb, int64_t nowMs, int load = -1);
   int percent() const { return percent_; }  // -1 before the first sample
+  double sag() const { return sag_; }        // mV per per mille of display load, 0 until learned
+  int lastCompensated() const { return compensated_; }
 
   static int estimate(int millivolts, bool usb);
 
  private:
+  void learn(int millivolts, bool usb, int64_t nowMs, int load);
+
   std::array<int, kWindow> window_{};
   std::size_t count_ = 0, next_ = 0;
-  bool usb_ = false;
-  int percent_ = -1;
+  bool usb_ = false, settled_ = false;
+  int percent_ = -1, compensated_ = -1;
+  unsigned risen_ = 0;
   int64_t acceptedAt_ = 0;
+  std::array<double, kSagSamples> sags_{};
+  std::size_t sagCount_ = 0, sagNext_ = 0;
+  double sag_ = 0;
+  int lastMillivolts_ = -1, lastLoad_ = -1;
+  bool lastUsb_ = false;
+  int64_t lastAt_ = 0;
 };
 
 }

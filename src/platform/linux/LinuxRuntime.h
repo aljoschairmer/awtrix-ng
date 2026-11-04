@@ -259,6 +259,9 @@ class LinuxRuntime {
   std::vector<ha::Entity> mqttEntities_;
   SettingsSaver settingsSaver_;
   int64_t nextFrame_ = 0;
+  // The display load goes to the supervisor's battery gauge this often (SupervisorProtocol.h).
+  static constexpr int64_t kPanelLoadMs = 2000;
+  int64_t nextPanelLoad_ = 0;
   bool displayFailed_ = false;
   bool inputFailed_ = false;
   bool readinessFailed_ = false;

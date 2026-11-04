@@ -282,7 +282,13 @@ void McuService::handle(const mcu::Frame& frame, int64_t nowMs) {
 void McuService::batteryMeasured(int64_t nowMs) {
   batterySeen_ = true;
   batterySeenAt_ = nowMs;
-  if (usbSeen_) gauge_.sample(batteryMillivolts(batteryWord_), usbRaw_ == 1, nowMs);
+  const int load = panelLoad_ >= 0 && nowMs - panelLoadAt_ <= kPanelLoadMs ? panelLoad_ : -1;
+  if (usbSeen_) gauge_.sample(batteryMillivolts(batteryWord_), usbRaw_ == 1, nowMs, load);
+}
+
+void McuService::setPanelLoad(int perMille, int64_t nowMs) {
+  panelLoad_ = perMille;
+  panelLoadAt_ = nowMs;
 }
 
 void McuService::pump(int64_t nowMs) {
@@ -775,7 +781,10 @@ void McuService::appendStatus(api::JsonWriter& json, int64_t nowMs) const {
   if (batterySeen_)
     json.member("batteryFirst", static_cast<unsigned>(batteryFirst_))
         .member("batteryWord", static_cast<unsigned>(batteryWord_))
-        .member("batteryAgeMs", static_cast<long long>(nowMs - batterySeenAt_));
+        .member("batteryAgeMs", static_cast<long long>(nowMs - batterySeenAt_))
+        .member("batteryCompensatedMillivolts", gauge_.lastCompensated());
+  json.member("panelLoad", panelLoad_ >= 0 && nowMs - panelLoadAt_ <= kPanelLoadMs ? panelLoad_ : -1)
+      .member("batterySag", gauge_.sag(), 3);
   json.member("rxBytes", static_cast<unsigned long long>(rxBytes_))
       .member("frames", static_cast<unsigned long long>(frames_))
       .member("acks", static_cast<unsigned long long>(acks_))
