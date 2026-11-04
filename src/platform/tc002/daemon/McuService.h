@@ -58,8 +58,7 @@ class McuService : public Service {
 
   void appendStatus(api::JsonWriter& json, int64_t nowMs) const;
   static int batteryMillivolts(uint16_t word);
-  // The display load the runtime reports; a report older than kPanelLoadMs no longer counts.
-  static constexpr int64_t kPanelLoadMs = 10000;
+  // The display load the runtime reports; the gauge gets it only while it is steady (LoadTracker).
   void setPanelLoad(int perMille, int64_t nowMs);
 
   bool open() const { return uart_.valid(); }
@@ -169,8 +168,7 @@ class McuService : public Service {
   uint16_t batteryWord_ = 0;
   int64_t usbSeenAt_ = 0, batterySeenAt_ = 0;
   BatteryGauge gauge_;
-  int panelLoad_ = -1;
-  int64_t panelLoadAt_ = 0;
+  LoadTracker panelLoad_;
 
   uint64_t rxBytes_ = 0, frames_ = 0, acks_ = 0, unknown_ = 0, queries_ = 0, timeouts_ = 0, writeErrors_ = 0;
 };

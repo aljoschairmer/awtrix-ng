@@ -47,6 +47,12 @@ int BatteryGauge::estimate(int millivolts, bool usb) {
   return usb ? lookup(kCharge, millivolts) : lookup(kDischarge, millivolts);
 }
 
+void LoadTracker::report(int perMille, int64_t nowMs) {
+  if (load_ < 0 || std::abs(perMille - load_) >= kSteadyStep || nowMs - reportedAt_ > kStaleMs) changedAt_ = nowMs;
+  load_ = perMille;
+  reportedAt_ = nowMs;
+}
+
 void BatteryGauge::learn(int millivolts, bool usb, int64_t nowMs, int load) {
   const bool paired = lastLoad_ >= 0 && load >= 0 && !usb && !lastUsb_ && nowMs - lastAt_ >= kLearnMinMs &&
                       nowMs - lastAt_ <= kLearnMaxMs && std::abs(load - lastLoad_) >= kMinLoadStep;

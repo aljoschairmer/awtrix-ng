@@ -3,6 +3,7 @@
 #include "support.h"
 
 using awtrix::tc002d::BatteryGauge;
+using awtrix::tc002d::LoadTracker;
 using tc002d_test::check;
 
 namespace {
@@ -181,6 +182,36 @@ void loadCompensation() {
   check(steady.sag() == 0, "a voltage that rises with the load is not sag");
 }
 
+void steadyLoad() {
+  LoadTracker tracker;
+  check(tracker.steady(0) == -1 && tracker.last(0) == -1, "no load before a report");
+  tracker.report(120, 0);
+  check(tracker.last(2000) == 120 && tracker.steady(2000) == -1, "a new load is not steady yet");
+  tracker.report(130, 4000);
+  check(tracker.steady(LoadTracker::kSteadyMs) == 130, "small changes keep it steady once it held for 8 s");
+  tracker.report(400, 10000);
+  check(tracker.steady(16000) == -1 && tracker.steady(18000) == 400, "a step starts the wait again");
+  check(tracker.last(18000 + LoadTracker::kStaleMs + 1) == -1, "without fresh reports the load is unknown");
+}
+
+// The MCU's reading is about 4 s old and the load flips every 20 s: right after a flip the reading
+// still belongs to the old load.
+void lateReadings() {
+  const auto loadAt = [](int64_t t) { return (t / 20000) % 2 ? 350 : 50; };
+  BatteryGauge waiting, eager;
+  LoadTracker tracker;
+  for (int64_t t = 0; t <= 40 * 60000; t += 2000) {
+    tracker.report(loadAt(t), t);
+    if (t % 10000 || t < 10000) continue;
+    const int reading = sagged(3950, loadAt(t - 4000));
+    waiting.sample(reading, false, t, tracker.steady(t));
+    eager.sample(reading, false, t, tracker.last(t));
+  }
+  check(waiting.sag() > 0.45 && waiting.sag() < 0.55, "a steady load gives the real sag");
+  check(eager.sag() < 0.25, "pairing every reading with the newest load learns far too little");
+  check(waiting.percent() == BatteryGauge::estimate(3950, false), "and the charge holds through the flips");
+}
+
 void spacingAndUnknown() {
   BatteryGauge gauge;
   gauge.sample(-1, false, 0);
@@ -203,6 +234,8 @@ int main() {
   provisionalStart();
   slowRise();
   loadCompensation();
+  steadyLoad();
+  lateReadings();
   spacingAndUnknown();
   return tc002d_test::finish("tc002d battery gauge");
 }

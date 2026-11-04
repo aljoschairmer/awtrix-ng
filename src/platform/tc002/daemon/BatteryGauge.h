@@ -22,6 +22,24 @@ namespace awtrix::tc002d {
 // load (per mille of a full-white frame at full brightness, Tc002Board), the gauge learns the sag
 // per per mille from readings kLearnMinMs to kLearnMaxMs apart whose load differs by kMinLoadStep,
 // and on battery moves each reading to kReferenceLoad, the load the curves are taken for.
+// The display load as the runtime reports it, counted only once it held for kSteadyMs: the MCU's
+// battery reading is a few seconds old, so right after a change it still belongs to the old load.
+class LoadTracker {
+ public:
+  static constexpr int kSteadyStep = 20;          // per mille between reports that count as a change
+  static constexpr int64_t kSteadyMs = 8000;
+  static constexpr int64_t kStaleMs = 10000;
+
+  void report(int perMille, int64_t nowMs);
+  int last(int64_t nowMs) const { return load_ >= 0 && nowMs - reportedAt_ <= kStaleMs ? load_ : -1; }
+  // -1 while the load changed within kSteadyMs or no report is fresh.
+  int steady(int64_t nowMs) const { return last(nowMs) >= 0 && nowMs - changedAt_ >= kSteadyMs ? load_ : -1; }
+
+ private:
+  int load_ = -1;
+  int64_t reportedAt_ = 0, changedAt_ = 0;
+};
+
 class BatteryGauge {
  public:
   static constexpr std::size_t kWindow = 31;
