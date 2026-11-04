@@ -6,12 +6,12 @@
   "base_sha256": "ae9737b190501c8ac9500cae31d9fb496f33f55b8e87413dee8f4b90a9c28bbd",
   "family": 123,
   "abi": 1,
-  "features": 11,
-  "version": 13,
-  "build_tag": 3690530934,
+  "features": 27,
+  "version": 14,
+  "build_tag": 3233427337,
   "file": "extension.bin",
-  "bytes": 3490,
-  "sha256": "f49bea97f5686ed289b30504f6241683901b3fcadf6c925fcd7842c1a71288ac",
+  "bytes": 3890,
+  "sha256": "b21e68038f8226b9ebdd18bcc300b71898fb84f082c85cb3f097c85524ec266e",
   "image_bytes": 38400,
-  "image_sha256": "2ae39bee4e35a878b4ca56603dd9fd0ff81fb39c7b183c18e603b7fbe82dc97a"
+  "image_sha256": "5b9d79318bd163ee9029a51c4d4a4043ec84d09b059abec102ea34727a702550"
 }
