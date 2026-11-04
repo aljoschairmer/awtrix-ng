@@ -147,6 +147,42 @@ opens the UART, and the daemon never runs a shell flasher or starts a competing 
 Source: `McuFirmware`, `McuUpgrade`, `McuService` in
 [`src/platform/tc002/daemon/`](https://github.com/Blueforcer/awtrix-ng/tree/main/src/platform/tc002/daemon).
 
+## LED driver registers
+
+The stock MCU firmware V1.0.17 drives the display's LED drivers and keeps a table of 8-bit driver
+registers, one value per colour, for registers `0x02` to `0x20`. It sends that table to the drivers
+when it starts. Two commands of the stock firmware read and write it, and the daemon offers them
+over the control socket for bench work (`McuDriverControl`, `McuService`):
+
+| Command | Payload | Effect |
+|---|---|---|
+| `mcu-registers` | – | the registers read so far: current value and the first value read, red, green, blue |
+| `mcu-register-read` | `REG` or `all` | queues a read (MCU command `0x13`) |
+| `mcu-register-write` | `REG RED GREEN BLUE` | queues a write (`0x12`) and a read back |
+| `mcu-register-restore` | – | writes the first value back to every changed register |
+
+Registers and values are hexadecimal bytes:
+
+```sh
+adb -s SERIAL shell /tmp/awtrix-release/bin/awtrix-tc002d ctl mcu-register-read all
+adb -s SERIAL shell /tmp/awtrix-release/bin/awtrix-tc002d ctl mcu-registers
+adb -s SERIAL shell "/tmp/awtrix-release/bin/awtrix-tc002d ctl mcu-register-write '0c 08 18 30'"
+```
+
+- On the wire, a read sends the register once per colour (`FF 55 13 03 REG REG REG` and the sum).
+  The answer carries one big-endian word per colour, with the register in the high byte and the
+  value in the low byte. A write sends the same three words; the MCU repeats them back.
+- Requests run between the power queries, one at a time, and never during a capture, a stream or
+  a firmware transfer. Due USB and battery queries go first.
+- A register is written only after it was read in this daemon's run, so its first value can be
+  restored. Nothing is stored: the MCU keeps a change until it restarts, and a daemon restart
+  forgets the first values.
+- Only an MCU that reports `V1.0.17` gets these requests, because the table layout was read from
+  that build. The AWTRIX extension leaves the commands alone.
+- On a stock clock `0x07`, `0x0c`, `0x14`, `0x16`, `0x19` and `0x1c` hold different values per
+  colour. What the registers mean is not documented. Raise no value that may set the LED current,
+  and watch the display while you change one.
+
 ## Tests and bench tools
 
 Host tests (`tests/tc002/daemon/test_mcufirmware.cpp` and neighbours,

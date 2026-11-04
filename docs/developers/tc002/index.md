@@ -446,6 +446,7 @@ update state, the start counters and the loader's logs; `restore-stock` brings t
 
 - Daemon: `adb -s SERIAL shell /tmp/awtrix-release/bin/awtrix-tc002d ctl status` (all services, the
   runtime, the speaker, the MCU, the update), `ctl wifi-status`, `ctl bluetooth`,
+  `ctl mcu-registers` (the LED driver registers, see [MCU updates](mcu-update.md#led-driver-registers)),
   `ctl restart-runtime`.
 - Logs: `/tmp/awtrix-tc002d/daemon.log` (and `.1`), `/tmp/awtrix-loader.log`,
   `/data/awtrix-ng/state/loader.log`, `/tmp/awtrix-loader.rescue` after a rescue. The web UI log
