@@ -13,7 +13,7 @@ preparation mode `awtrix-linux --prepare-mcu`
 ([`src/platform/tc002/mcu/`](https://github.com/Blueforcer/awtrix-ng/tree/main/src/platform/tc002/mcu))
 and the pin of the tested artifact in
 [`tools/tc002/mcu/release.json`](https://github.com/Blueforcer/awtrix-ng/blob/main/tools/tc002/mcu/release.json).
-The pinned build is 13. The MCU never downloads anything by itself; every TC002 bundle carries
+The pinned build is 14. The MCU never downloads anything by itself; every TC002 bundle carries
 exactly the MCU artifact selected for that Linux release.
 
 ## How it works
@@ -25,6 +25,31 @@ exactly the MCU artifact selected for that Linux release.
    and transfers the image over the UART.
 4. The MCU reboots the whole clock. The next boot reads the new identity and marks the attempt
    verified.
+
+### Builds and features
+
+| Build | Features | Adds |
+|---|---|---|
+| 13 | `0x0b` | `0x01` PCM capture (`0x06`), `0x08` continuous stream (`0x07`), `0x02` (set by build 13, not queried) |
+| 14 | `0x1b` | `0x10` LED driver table commands `0x09`, `0x0a`, `0x0b` (see [LED driver registers](#led-driver-registers)) |
+
+Build 13's source is not in this repository; it is kept as
+[`tools/tc002/mcu/extension/build13.bin`](https://github.com/Blueforcer/awtrix-ng/tree/main/tools/tc002/mcu/extension).
+Build 14 is that file byte for byte, with `registers.S` linked right after it at `0x100087c0` and
+the identity raised to version 14 with feature `0x10`; the build tag is the CRC-32 of the file
+with the tag zeroed. `build.py` rebuilds it (clang, ld.lld, llvm-objcopy and llvm-nm with RISC-V
+support) and compares it with the release, or with `--write` replaces `extension.bin`, the manifest
+and the pins:
+
+```sh
+tools/tc002/mcu/extension/build.py --write --base base-v1.0.17.fot \
+    --assemble build/host/awtrix-tc002-mcu-assemble
+```
+
+`awtrix-tc002-mcu-assemble` builds the image from the original and an extension as the clock's
+preparation does and prints its size and SHA-256 for the manifest. `McuPatch.cpp` points the
+dispatch slots `0x09` to `0x0b` at the handlers only for an extension that declares feature
+`0x10`, so build 13 still gives the same image.
 
 ### What a release carries
 
@@ -125,7 +150,7 @@ rollback, and a normal boot never clears the journal.
 
 Every change of the update status is logged once as `mcu: update: <status>`, for example
 `retry 2 of 3 after an unconfirmed attempt: MCU transfer timeout`,
-`installing build 13 (38400 bytes), attempt 2 of 3` or
+`installing build 14 (38400 bytes), attempt 2 of 3` or
 `MCU update unconfirmed after 3 attempts (last: …); automatic retry blocked`. A failure without a
 recorded reason, such as a power loss mid-transfer, shows no reason. `awtrix-tc002d ctl status`
 includes `mcu.firmware` with the installed and target version, tag, status, attempts, preparation
@@ -207,6 +232,13 @@ boot version policy, the durable attempt and verification, serial fragmentation,
 and block geometry, retry sequence numbers, a final `ff`, refusal, resume and invalid resume
 offers, the attempt count and its limit, errors and timeouts, health and USB gating, and deferred
 shutdown.
+
+`tools/tc002/mcu/test_extension.py` runs the driver table handlers of build 14 in a RISC-V emulator
+([unicorn](https://www.unicorn-engine.org/), skipped without it), with the firmware routines they call
+as stand-ins that record their arguments: the words passed, the answers, refused requests, no flash
+write from `0x09`, and the dispatcher's frame length and stack left intact. With `AWTRIX_MCU_BASE`
+the table reader runs as the vendor's own code, and the image's dispatch table is checked for build
+13 and 14. It also checks that the release is what `build.py` builds.
 
 ## Limits
 
