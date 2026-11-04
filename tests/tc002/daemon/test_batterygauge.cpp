@@ -2,6 +2,9 @@
 #include "platform/tc002/daemon/BatteryGauge.h"
 #include "support.h"
 
+#include <array>
+#include <cstdlib>
+
 using awtrix::tc002d::BatteryGauge;
 using awtrix::tc002d::LoadTracker;
 using tc002d_test::check;
@@ -212,6 +215,48 @@ void lateReadings() {
   check(waiting.percent() == BatteryGauge::estimate(3950, false), "and the charge holds through the flips");
 }
 
+
+// The bench run on a TC002 (2026-11-04): white at brightness 150 (591 per mille) and the apps
+// (about 170) took turns every 20 s; the reading sat 30 mV lower in white, with about 8 mV of
+// noise per reading. jitter: how far the apps' load moves between two 2 s reports.
+BatteryGauge benchRun(int jitter) {
+  BatteryGauge gauge;
+  LoadTracker tracker;
+  uint32_t seed = 12345;
+  const auto noise = [&seed](int span) {
+    seed = seed * 1103515245u + 12345u;
+    return static_cast<int>((seed >> 16) % static_cast<uint32_t>(2 * span + 1)) - span;
+  };
+  const auto loadAt = [&](int64_t t) { return (t / 20000) % 2 ? 170 + noise(jitter) : 591; };
+  int load = 591;
+  for (int64_t t = 0; t <= 20 * 60000; t += 1000) {
+    if (t % 2000 == 0) {
+      load = loadAt(t);
+      tracker.report(load, t);
+    }
+    if (t % 10000 || t < 10000) continue;
+    const int truth = 4080 - static_cast<int>(0.07 * (((t - 3000) / 20000) % 2 ? 170 : 591)) - static_cast<int>(t / 20000);
+    gauge.sample(truth + noise(8), false, t, tracker.steady(t));
+  }
+  return gauge;
+}
+
+void benchTimeline() {
+  for (int jitter : {0, 25}) {
+    const BatteryGauge gauge = benchRun(jitter);
+    check(gauge.sag() > 0.056 && gauge.sag() < 0.084, "the bench run learns its 30 mV over 421 per mille");
+    std::array<BatteryGauge::SagPair, 9> pairs{};
+    const std::size_t count = gauge.sagPairs(pairs);
+    bool alternating = count == pairs.size();
+    for (std::size_t i = 0; i < count; ++i) {
+      alternating = alternating && std::abs(pairs[i].toLoad - pairs[i].fromLoad) > 300 &&
+                    (i == 0 || pairs[i].atMs > pairs[i - 1].atMs);
+    }
+    if (jitter == 0) check(alternating, "the status pairs are the white and apps readings, oldest first");
+    check(gauge.sagRejected() == 0, "no pair of the bench run is too steep to be sag");
+  }
+}
+
 void spacingAndUnknown() {
   BatteryGauge gauge;
   gauge.sample(-1, false, 0);
@@ -237,5 +282,6 @@ int main() {
   steadyLoad();
   lateReadings();
   spacingAndUnknown();
+  benchTimeline();
   return tc002d_test::finish("tc002d battery gauge");
 }

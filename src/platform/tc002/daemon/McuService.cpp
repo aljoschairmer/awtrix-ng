@@ -780,7 +780,15 @@ void McuService::appendStatus(api::JsonWriter& json, int64_t nowMs) const {
         .member("batteryAgeMs", static_cast<long long>(nowMs - batterySeenAt_))
         .member("batteryCompensatedMillivolts", gauge_.lastCompensated());
   json.member("panelLoad", panelLoad_.last(nowMs)).member("panelLoadSteady", panelLoad_.steady(nowMs) >= 0)
-      .member("batterySag", gauge_.sag(), 3);
+      .member("batterySag", gauge_.sag(), 3).member("batterySagRejected", gauge_.sagRejected());
+  // [seconds ago, load before, load after, mV before, mV after] for each pair behind batterySag.
+  std::array<BatteryGauge::SagPair, 9> pairs{};
+  const std::size_t pairCount = gauge_.sagPairs(pairs);
+  json.key("batterySagPairs").beginArray();
+  for (std::size_t i = 0; i < pairCount; ++i)
+    json.beginArray().value(static_cast<long long>((nowMs - pairs[i].atMs) / 1000)).value(pairs[i].fromLoad)
+        .value(pairs[i].toLoad).value(pairs[i].fromMillivolts).value(pairs[i].toMillivolts).endArray();
+  json.endArray();
   json.member("rxBytes", static_cast<unsigned long long>(rxBytes_))
       .member("frames", static_cast<unsigned long long>(frames_))
       .member("acks", static_cast<unsigned long long>(acks_))
