@@ -188,12 +188,26 @@ firmware reach the registers, and the daemon offers them over the control socket
   table only while no override was ever written.
 - A live write lasts until the panel next comes back on and the table goes out again.
 
+MCU build 14 (feature `0x10`, [`registers.S`](https://github.com/Blueforcer/awtrix-ng/blob/main/tools/tc002/mcu/extension/registers.S))
+adds commands that work on the table itself, and the daemon uses them whenever the MCU reports
+them (`backend: "extension"` in `mcu-registers`; otherwise `"stock"`):
+
+- **`0x09`** takes the payload of `0x12`, writes the table (`0x10004adc`) and sends the register to
+  the drivers (`0x10003af4`, the live part of `0x12`), and echoes the words. No flash: the value
+  lasts until the MCU restarts, also when the panel comes back on.
+- **`0x0a`** takes the payload of `0x13` and answers with the table's words, past any override.
+- **`0x0b`** has no payload: it empties the saved override (settings offset `0x300`), so `0x13`
+  reads the table again, and answers with no payload.
+- A request they refuse (a register outside `0x02` to `0x20`, words that name different
+  registers, a wrong length) is answered with the same command and no payload.
+
 | Command | Payload | Effect |
 |---|---|---|
-| `mcu-registers` | – | the factory table of V1.0.17, the values known in this run and the override |
-| `mcu-register-read` | `REG` or `all` | queues a read (MCU command `0x13`) |
-| `mcu-register-write` | `REG RED GREEN BLUE` | queues a write (`0x12`): it becomes the MCU's saved override |
-| `mcu-register-restore` | – | writes the factory value to every register known to differ, the override last |
+| `mcu-registers` | – | the backend, the factory table of V1.0.17, the values known in this run and the override |
+| `mcu-register-read` | `REG` or `all` | queues a read (`0x0a`, on stock firmware `0x13`) |
+| `mcu-register-write` | `REG RED GREEN BLUE` | queues a write (`0x09`; on stock firmware `0x12`, which becomes the MCU's saved override) |
+| `mcu-register-restore` | – | build 14: clears the override and writes every factory value; stock: writes the factory value to every register known to differ, the override last |
+| `mcu-register-clear-override` | – | build 14: clears the stock firmware's saved override (`0x0b`) |
 
 Registers and values are hexadecimal bytes. Quote the whole command for the clock's shell, so the
 payload stays one argument also from PowerShell:
@@ -207,14 +221,15 @@ adb -s SERIAL shell "/tmp/awtrix-release/bin/awtrix-tc002d ctl mcu-register-writ
 - On the wire, a read sends the register once per colour (`FF 55 13 03 REG REG REG` and the sum).
   The answer carries one big-endian word per colour, with the register in the high byte and the
   value in the low byte. A write sends the same three words; the MCU repeats them back.
-- An answer that names another register than the one asked is the override: `mcu-registers` shows
+- On stock firmware, an answer that names another register than the one asked is the override: `mcu-registers` shows
   it under `override` and counts it in `overrideAnswers`, not as a failure. Other registers cannot
   be read while it exists. A write is not read back, because the answer would be the override.
 - The factory values are built in (`kDriverFactory`, read from a stock TC002 before any `0x12`), so
   a register can be written and restored without reading it first. `restore` also puts a changed
   override from an earlier run back to its factory value; the override then left behind is a
   factory value, which the MCU loads at start like the table's own.
-- Every changed write is a write to the MCU's flash.
+- On stock firmware every changed write is a write to the MCU's flash; with build 14 only clearing
+  the override is.
 - Requests run between the power queries, one at a time, and never during a capture, a stream or
   a firmware transfer. Due USB and battery queries go first.
 - Only an MCU that reports `V1.0.17` gets these requests, because the table layout and the

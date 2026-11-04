@@ -314,14 +314,14 @@ struct Commands : ControlRegistry {
 bool has(const std::string& text, const char* part) { return text.find(part) != std::string::npos; }
 
 // Brings a service to the point where only the periodic power queries remain.
-void bootTo(Mcu& device, McuService& mcu, int64_t now, const char* version) {
+void bootTo(Mcu& device, McuService& mcu, int64_t now, const char* version, std::vector<uint8_t> identity = {}) {
   mcu.start(now);
   device.take();
   const std::string text = version;
   device.send(frame(0x11, std::vector<uint8_t>(text.begin(), text.end())));
   serve(mcu, now);
   device.take();
-  device.send(frame(0x08, {}));
+  device.send(frame(0x08, identity));
   serve(mcu, now);
   device.take();
   device.send(frame(0x02, {1}));
@@ -444,6 +444,83 @@ void driverRegisters() {
 
 }
 
+// MCU build 14 (feature 0x10): the table commands 0x09/0x0a/0x0b instead of the stock 0x12/0x13.
+void driverTable() {
+  Mcu device;
+  DeviceState state;
+  McuOptions options;
+  options.path = device.slave;
+  McuService mcu(state, options);
+  Commands commands;
+  addDriverRegisterCommands(commands, mcu);
+  int64_t now = 10000;
+  bootTo(device, mcu, now, "V1.0.17", {'A', 'W', 'M', 'C', 1, 0x1b, 123, 0, 14, 0, 0, 0, 0x89, 0x2f, 0xba, 0xc0});
+  check(mcu.driverTableAvailable(), "build 14 with feature 0x10 has the table commands");
+  check(has(commands.run("mcu-registers"), "\"backend\":\"extension\""), "the status names the backend");
+
+  check(commands.run("mcu-register-read", "14") == "{\"ok\":true}", "a read is queued");
+  mcu.onTime(now);
+  check(device.take() == frame(0x0a, {0x14, 0x14, 0x14}), "read: command 0a with the stock payload");
+  device.send(frame(0x0a, {0x14, 0x14, 0x14, 0x22, 0x14, 0x32}));
+  serve(mcu, now);
+  check(has(commands.run("mcu-registers"), "\"register\":20,\"factory\":[20,34,50],\"value\":[20,34,50],\"known\":true"),
+        "the table answer fills the register");
+
+  check(commands.run("mcu-register-write", "0c 00 00 00") == "{\"ok\":true}", "a write is queued");
+  mcu.onTime(now);
+  check(device.take() == frame(0x09, {0x0c, 0, 0x0c, 0, 0x0c, 0}), "write: command 09, never 12");
+  device.send(frame(0x09, {0x0c, 0, 0x0c, 0, 0x0c, 0}));
+  serve(mcu, now);
+  std::string table = commands.run("mcu-registers");
+  check(has(table, "\"value\":[0,0,0],\"known\":true,\"changed\":true") && has(table, "\"override\":null") &&
+            has(table, "\"writes\":1"),
+        "a table write is no override: " + table);
+
+  check(commands.run("mcu-register-read", "01") != "{\"ok\":true}", "the range still holds");
+  check(commands.run("mcu-register-write", "0c 01 01 01") == "{\"ok\":true}", "another write");
+  mcu.onTime(now);
+  device.take();
+  device.send(frame(0x09, {}));
+  serve(mcu, now);
+  table = commands.run("mcu-registers");
+  check(has(table, "refused the request for LED driver register 0x0c") && has(table, "\"failures\":1"),
+        "an empty answer is a refusal: " + table);
+
+  check(commands.run("mcu-register-clear-override") == "{\"ok\":true}", "clearing the override is queued");
+  mcu.onTime(now);
+  check(isQuery(device.take(), 0x0b), "clear: command 0b without payload");
+  device.send(frame(0x0b, {}));
+  serve(mcu, now);
+
+  check(commands.run("mcu-register-restore") == "{\"ok\":true}", "restore is queued");
+  mcu.onTime(now);
+  check(isQuery(device.take(), 0x0b), "restore clears the override first");
+  device.send(frame(0x0b, {}));
+  serve(mcu, now);
+  for (uint8_t reg = 0x02; reg <= 0x20; ++reg) {
+    mcu.onTime(now);
+    const uint8_t* f = mcu::kDriverFactory[reg - 0x02];
+    const auto sent = device.take();
+    check(sent == frame(0x09, {reg, f[0], reg, f[1], reg, f[2]}), "restore writes every factory value");
+    device.send(frame(0x09, {reg, f[0], reg, f[1], reg, f[2]}));
+    serve(mcu, now);
+  }
+  check(!has(commands.run("mcu-registers"), "\"changed\":true"), "back to the factory table");
+
+  Mcu older;
+  McuOptions olderOptions;
+  olderOptions.path = older.slave;
+  McuService thirteen(state, olderOptions);
+  Commands olderCommands;
+  addDriverRegisterCommands(olderCommands, thirteen);
+  bootTo(older, thirteen, now, "V1.0.17", {'A', 'W', 'M', 'C', 1, 0x0b, 123, 0, 13, 0, 0, 0, 0x76, 0x08, 0xf9, 0xdb});
+  check(thirteen.driverRegistersAvailable() && !thirteen.driverTableAvailable(), "build 13 keeps the stock commands");
+  check(has(olderCommands.run("mcu-register-clear-override"), "needs MCU build 14"), "and cannot clear the override");
+  check(olderCommands.run("mcu-register-read", "0c") == "{\"ok\":true}", "a read on build 13");
+  thirteen.onTime(now);
+  check(older.take() == frame(0x13, {0x0c, 0x0c, 0x0c}), "uses 13");
+}
+
 int main() {
   tc002d_test::quietLogs();
   batteryConversion();
@@ -451,5 +528,6 @@ int main() {
   missingUart();
   pcmConversation();
   driverRegisters();
+  driverTable();
   return tc002d_test::finish("tc002d mcu");
 }

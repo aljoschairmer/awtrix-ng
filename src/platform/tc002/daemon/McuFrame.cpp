@@ -16,7 +16,9 @@ uint16_t checksum(const uint8_t* bytes, std::size_t length) {
 }
 
 bool encodeQuery(uint8_t command, uint8_t (&out)[kQueryBytes]) {
-  if (command != kUsb && command != kBattery && command != kVersion && command != kIdentity) return false;
+  if (command != kUsb && command != kBattery && command != kVersion && command != kIdentity &&
+      command != kDriverClearOverride)
+    return false;
   out[0] = 0xff;
   out[1] = 0x55;
   out[2] = command;
@@ -44,11 +46,11 @@ void encodePcmRequest(uint16_t halves, uint8_t (&out)[kPcmRequestBytes]) {
   out[7] = static_cast<uint8_t>(sum);
 }
 
-bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes]) {
+bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes], uint8_t command) {
   if (reg < kDriverFirstRegister || reg > kDriverLastRegister) return false;
   out[0] = 0xff;
   out[1] = 0x55;
-  out[2] = kDriverRead;
+  out[2] = command;
   out[3] = 3;
   out[4] = out[5] = out[6] = reg;
   const uint16_t sum = checksum(out, 7);
@@ -57,11 +59,11 @@ bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes]) {
   return true;
 }
 
-bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[kDriverWriteBytes]) {
+bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[kDriverWriteBytes], uint8_t command) {
   if (reg < kDriverFirstRegister || reg > kDriverLastRegister) return false;
   out[0] = 0xff;
   out[1] = 0x55;
-  out[2] = kDriverWrite;
+  out[2] = command;
   out[3] = 6;
   for (int colour = 0; colour < 3; ++colour) {
     out[4 + colour * 2] = reg;
@@ -83,7 +85,9 @@ const uint8_t kDriverFactory[kDriverLastRegister - kDriverFirstRegister + 1][3] 
 };
 
 bool decodeDriverReply(const Frame& frame, uint8_t& reg, uint8_t (&values)[3]) {
-  if ((frame.command != kDriverRead && frame.command != kDriverWrite) || frame.length != 6) return false;
+  if ((frame.command != kDriverRead && frame.command != kDriverWrite && frame.command != kDriverTableRead &&
+       frame.command != kDriverTableWrite) || frame.length != 6)
+    return false;
   reg = frame.payload[0];
   if (reg < kDriverFirstRegister || reg > kDriverLastRegister) return false;
   for (int colour = 1; colour < 3; ++colour)
