@@ -3,6 +3,7 @@
 #include "support.h"
 
 #include <array>
+#include <cmath>
 #include <cstdlib>
 
 using awtrix::tc002d::BatteryGauge;
@@ -104,13 +105,21 @@ void usbChanges() {
 
   now = feed(gauge, 4100, true, kWindow, now);
   check(gauge.percent() == 100, "charged");
-  now = feed(gauge, 3900, false, kWindow - 1, now);
-  check(gauge.percent() == 100, "unplugging holds the value until the window is full");
+  now = feed(gauge, 3900, false, static_cast<int>(BatteryGauge::kProvisionalReadings) - 1, now);
+  check(gauge.percent() == 100, "unplugging holds the value for the first readings");
   now = feed(gauge, 3900, false, 1, now);
   const int discharged = gauge.percent();
-  check(discharged < 100, "then it follows the discharge");
+  check(discharged == BatteryGauge::estimate(3900, false), "then their median lowers it, long before a full window");
+  now = feed(gauge, 3900, false, kWindow, now);
+  check(gauge.percent() == discharged, "and the full window agrees");
   feed(gauge, 3900, true, kWindow, now);
   check(gauge.percent() >= discharged, "plugging in never lowers it");
+
+  BatteryGauge low;
+  now = feed(low, 3900, true, kWindow, 0);
+  const int charging = low.percent();
+  now = feed(low, 4000, false, static_cast<int>(BatteryGauge::kProvisionalReadings), now);
+  check(low.percent() == charging, "the readings after unplugging never raise it");
 }
 
 void startHolds() {
@@ -150,19 +159,22 @@ void slowRise() {
 }
 
 // A cell that sags 0.5 mV per per mille of display load, against kReferenceLoad.
-int sagged(int restingAtReference, int load) {
-  return restingAtReference - (load - BatteryGauge::kReferenceLoad) / 2;
+// A cell that sags by sag mV per per mille of display load (a TC002 measured 0.063 to 0.071).
+int sagged(int restingAtReference, int load, double sag = 0.07) {
+  return restingAtReference - static_cast<int>(std::lround(sag * (load - BatteryGauge::kReferenceLoad)));
 }
 
 void loadCompensation() {
+  BatteryGauge fresh;
+  check(fresh.sag() == BatteryGauge::kDefaultSag, "the measured sag applies before anything is learned");
   BatteryGauge learning, blind;
   int64_t now = 0;
   for (int i = 0; i < 3 * kWindow; ++i, now += kStep) {
-    const int load = i % 2 ? 450 : 50;  // a bright app and the clock take turns
+    const int load = i % 3 ? 450 : 50;  // a bright app shows most of the time, the clock in between
     learning.sample(sagged(3950, load), false, now, load);
     blind.sample(sagged(3950, load), false, now);
   }
-  check(learning.sag() > 0.45 && learning.sag() < 0.55, "the sag is learned from load steps");
+  check(learning.sag() > 0.065 && learning.sag() < 0.075, "the sag is learned from load steps");
   check(learning.percent() == BatteryGauge::estimate(3950, false),
         "with the sag learned the bright app does not count against the charge");
   check(blind.percent() < learning.percent(), "without the load the bright app lowers it");
@@ -174,15 +186,20 @@ void loadCompensation() {
     const int load = i % 2 ? 450 : 50;
     charging.sample(sagged(3950, load), true, now, load);
   }
-  check(charging.sag() == 0 && charging.lastCompensated() == sagged(3950, 450),
+  check(charging.sag() == BatteryGauge::kDefaultSag && charging.lastCompensated() == sagged(3950, 450),
         "on USB the charger holds the voltage: nothing is learned or moved");
 
   BatteryGauge steady;
   now = feed(steady, 3950, false, kWindow, 0);
   for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 3) - 1, false, now, 60 + (i % 2) * 10);
-  check(steady.sag() == 0, "small load changes teach nothing");
+  check(steady.sag() == BatteryGauge::kDefaultSag, "small load changes teach nothing");
   for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 2) * 40, false, now, i % 2 ? 450 : 50);
-  check(steady.sag() == 0, "a voltage that rises with the load is not sag");
+  check(steady.sag() == BatteryGauge::kMinSag, "a voltage that rises with the load is no sag: the lower bound holds");
+
+  BatteryGauge steep;
+  now = 0;
+  for (int i = 0; i < kWindow; ++i, now += kStep) steep.sample(sagged(3950, i % 2 ? 450 : 50, 0.2), false, now, i % 2 ? 450 : 50);
+  check(steep.sag() == BatteryGauge::kMaxLearnedSag, "a sag far above the measured one stops at the upper bound");
 }
 
 void steadyLoad() {
@@ -200,7 +217,7 @@ void steadyLoad() {
 // The MCU's reading is about 4 s old and the load flips every 20 s: right after a flip the reading
 // still belongs to the old load.
 void lateReadings() {
-  const auto loadAt = [](int64_t t) { return (t / 20000) % 2 ? 350 : 50; };
+  const auto loadAt = [](int64_t t) { return (t / 20000) % 2 ? 450 : 50; };
   BatteryGauge waiting, eager;
   LoadTracker tracker;
   for (int64_t t = 0; t <= 40 * 60000; t += 2000) {
@@ -210,8 +227,8 @@ void lateReadings() {
     waiting.sample(reading, false, t, tracker.steady(t));
     eager.sample(reading, false, t, tracker.last(t));
   }
-  check(waiting.sag() > 0.45 && waiting.sag() < 0.55, "a steady load gives the real sag");
-  check(eager.sag() < 0.25, "pairing every reading with the newest load learns far too little");
+  check(waiting.sag() > 0.06 && waiting.sag() < 0.08, "a steady load gives the real sag");
+  check(eager.sag() <= 0.05, "pairing every reading with the newest load learns far too little");
   check(waiting.percent() == BatteryGauge::estimate(3950, false), "and the charge holds through the flips");
 }
 

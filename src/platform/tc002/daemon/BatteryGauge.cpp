@@ -71,7 +71,7 @@ void BatteryGauge::learn(int millivolts, bool usb, int64_t nowMs, int load) {
         std::copy(sags_.begin(), sags_.begin() + static_cast<std::ptrdiff_t>(sagCount_), sorted.begin());
         std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sagCount_ / 2),
                          sorted.begin() + static_cast<std::ptrdiff_t>(sagCount_));
-        sag_ = sorted[sagCount_ / 2];
+        sag_ = std::clamp(sorted[sagCount_ / 2], kMinSag, kMaxLearnedSag);
       }
     }
   }
@@ -96,6 +96,7 @@ void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs, int load) {
   if (!usb && load >= 0) millivolts += static_cast<int>(std::lround(sag_ * (load - kReferenceLoad)));
   compensated_ = millivolts;
   if (percent_ < 0 || usb != usb_) {
+    unplugged_ = percent_ >= 0 && usb_ && !usb;
     if (percent_ < 0) percent_ = estimate(millivolts, usb);
     usb_ = usb;
     count_ = next_ = 0;
@@ -107,6 +108,15 @@ void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs, int load) {
   window_[next_] = millivolts;
   next_ = (next_ + 1) % window_.size();
   if (count_ < window_.size()) ++count_;
+  if (unplugged_ && count_ == kProvisionalReadings) {
+    // The charger's voltage is gone after a few readings; holding the USB percentage for a whole
+    // window would end in a jump. Lower only: the full window decides on anything higher.
+    unplugged_ = false;
+    std::array<int, kProvisionalReadings> first{};
+    std::copy(window_.begin(), window_.begin() + kProvisionalReadings, first.begin());
+    std::nth_element(first.begin(), first.begin() + kProvisionalReadings / 2, first.end());
+    percent_ = std::min(percent_, estimate(first[kProvisionalReadings / 2], false));
+  }
   if (count_ < window_.size()) return;
   auto sorted = window_;
   std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());

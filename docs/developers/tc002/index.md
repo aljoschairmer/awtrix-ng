@@ -456,13 +456,18 @@ linearly. `BatteryGauge` (`src/platform/tc002/daemon/`) works from the voltage i
 - **On battery** the percentage falls with the median at once. It rises only after a whole window
   at least 3 points above it, and then by one per window.
 - **On USB** it only rises, up to 100 % at the charger's full voltage. After every USB change it
-  holds until the window is full of new readings.
+  holds until the window is full of new readings. After unplugging, the median of the first three
+  readings (about 30 s) may lower it before that, so the charger's voltage does not end in a jump
+  five minutes later.
 - **Display load.** The display draws most of the current, and the cell's voltage sags with it.
   The runtime reports the load (`panelLoad`). The MCU's reading is a few seconds old, so a reading
   counts with its load only once the load held for 8 s (`panelLoadSteady`); otherwise it counts as
   measured. From two such readings 5 to 30 s apart whose load differs by
   at least 40 per mille, the gauge estimates the sag per per mille; the median of the last nine
-  estimates counts once there are three. On battery each reading then moves to a load of
+  estimates counts once there are three, kept within 0.04 to 0.09. Until then it uses 0.065, the
+  sag measured on a TC002: 0.063 and 0.064 in two bench runs (white against dark, 20 s each) and
+  0.071 against the apps. Learning alone is not enough: with the apps on screen it once ended at
+  0.015. On battery each reading then moves to a load of
   50 per mille, an assumed typical load while the curves were measured. On USB nothing is learned
   or moved.
 
@@ -471,8 +476,8 @@ linearly. `BatteryGauge` (`src/platform/tc002/daemon/`) works from the voltage i
 the reading pairs behind `batterySag`, oldest first, as `[seconds ago, load before, load after,
 mV before, mV after]`; `batterySagRejected` counts the pairs dropped as too steep to be sag.
 On battery, when ADB is gone, `GET /api/v1/device` still shows `panelLoad` and the unrounded
-`batteryMillivolts`, so a PC can follow both over Wi-Fi. Full white at brightness 150 is about
-591 per mille.
+`batteryMillivolts`, so a PC can follow both over Wi-Fi. Full white is about 405 per mille at
+brightness 102 and 591 at brightness 150.
 
 ### Debugging on the clock
 
