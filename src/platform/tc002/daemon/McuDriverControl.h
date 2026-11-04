@@ -4,10 +4,10 @@
 #include "platform/tc002/daemon/McuService.h"
 
 // Control commands for the LED driver registers (McuService), for bench work:
-//   mcu-registers                   the registers read so far, their first and current values
+//   mcu-registers                   the factory table, the values known in this run, the override
 //   mcu-register-read  REG | all    queues a read
-//   mcu-register-write REG R G B    queues a write of red, green and blue, then a read back
-//   mcu-register-restore            writes back every changed register's first value
+//   mcu-register-write REG R G B    queues a write of red, green and blue: the MCU's saved override
+//   mcu-register-restore            writes the factory value to every register known to differ
 // Registers and values are hexadecimal bytes. A queued request replies {"ok":true}; its result
 // shows in mcu-registers once the MCU answered.
 namespace awtrix {

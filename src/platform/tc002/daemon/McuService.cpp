@@ -585,8 +585,6 @@ std::string McuService::writeDriverRegister(uint8_t reg, const uint8_t (&values)
   if (reg < mcu::kDriverFirstRegister || reg > mcu::kDriverLastRegister)
     return "register " + hexRegister(reg) + " is outside 0x02 to 0x20";
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
-  if (!driver_[reg - mcu::kDriverFirstRegister].known)
-    return "read register " + hexRegister(reg) + " first, so that its value can be restored";
   if (driverJobs_.size() + 1 >= kDriverQueue) return "too many register requests queued";
   DriverJob job{true, reg, {}};
   std::memcpy(job.values, values, sizeof job.values);
@@ -596,14 +594,24 @@ std::string McuService::writeDriverRegister(uint8_t reg, const uint8_t (&values)
 
 std::string McuService::restoreDriverRegisters() {
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
-  std::size_t changed = 0;
-  for (const auto& r : driver_) changed += r.changed;
-  if (driverJobs_.size() + 2 * changed > kDriverQueue) return "too many register requests queued";
+  std::array<bool, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> due{};
+  std::size_t count = 0;
   for (std::size_t i = 0; i < driver_.size(); ++i) {
-    if (!driver_[i].changed) continue;
-    DriverJob job{true, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}};
-    std::memcpy(job.values, driver_[i].original, sizeof job.values);
-    driverJobs_.push_back(job);
+    const bool overridden = overrideKnown_ && overrideRegister_ == mcu::kDriverFirstRegister + i &&
+                            std::memcmp(overrideValue_, mcu::kDriverFactory[i], 3) != 0;
+    due[i] = overridden || (driver_[i].known && std::memcmp(driver_[i].value, mcu::kDriverFactory[i], 3) != 0);
+    count += due[i];
+  }
+  if (driverJobs_.size() + count > kDriverQueue) return "too many register requests queued";
+  // The override ends as the last one written; a changed override goes last so it is the one kept.
+  for (int pass = 0; pass < 2; ++pass) {
+    for (std::size_t i = 0; i < driver_.size(); ++i) {
+      const bool isOverride = overrideKnown_ && overrideRegister_ == mcu::kDriverFirstRegister + i;
+      if (!due[i] || isOverride != (pass == 1)) continue;
+      DriverJob job{true, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}};
+      std::memcpy(job.values, mcu::kDriverFactory[i], sizeof job.values);
+      driverJobs_.push_back(job);
+    }
   }
   return {};
 }
@@ -626,25 +634,37 @@ bool McuService::sendDriverJob(int64_t nowMs) {
 
 void McuService::driverReply(const mcu::Frame& frame) {
   const DriverJob job = driverSent_;
-  uint8_t values[3];
-  if (!mcu::decodeDriverReply(frame, job.reg, values)) {
+  uint8_t reg = 0, values[3];
+  if (!mcu::decodeDriverReply(frame, reg, values) || (frame.command == mcu::kDriverWrite && reg != job.reg)) {
     ++driverFailures_;
     driverError_ = "the MCU did not answer for LED driver register " + hexRegister(job.reg);
     return;
   }
-  DriverRegister& r = driver_[job.reg - mcu::kDriverFirstRegister];
+  DriverRegister& r = driver_[reg - mcu::kDriverFirstRegister];
+  std::memcpy(r.value, values, sizeof r.value);
+  r.known = true;
   if (frame.command == mcu::kDriverWrite) {
-    // The answer repeats the request; reading the register back shows what the MCU now holds.
+    // The answer repeats the request, which is now the override; reading it back would only
+    // return the override again.
     ++driverWrites_;
-    Log::line("mcu", "LED driver register 0x%02x set to %02x %02x %02x", job.reg, values[0], values[1], values[2]);
-    driverJobs_.push_front(DriverJob{false, job.reg, {}});
+    overrideKnown_ = true;
+    overrideRegister_ = reg;
+    std::memcpy(overrideValue_, values, sizeof overrideValue_);
+    Log::line("mcu", "LED driver register 0x%02x set to %02x %02x %02x (saved as the MCU's override)", reg,
+              values[0], values[1], values[2]);
+    return;
+  }
+  if (reg != job.reg) {
+    // An override exists: the MCU answers every read with it.
+    ++overrideAnswers_;
+    overrideKnown_ = true;
+    overrideRegister_ = reg;
+    std::memcpy(overrideValue_, values, sizeof overrideValue_);
+    driverError_ = "the MCU answers every read with its saved override, register " + hexRegister(reg) +
+                   "; other registers cannot be read";
     return;
   }
   ++driverReads_;
-  if (!r.known) std::memcpy(r.original, values, sizeof r.original);
-  r.known = true;
-  std::memcpy(r.value, values, sizeof r.value);
-  r.changed = std::memcmp(r.value, r.original, sizeof r.value) != 0;
 }
 
 void McuService::appendDriverRegisters(api::JsonWriter& json) const {
@@ -652,17 +672,31 @@ void McuService::appendDriverRegisters(api::JsonWriter& json) const {
       .member("queued", static_cast<unsigned long long>(driverJobs_.size()))
       .member("reads", static_cast<unsigned long long>(driverReads_))
       .member("writes", static_cast<unsigned long long>(driverWrites_))
-      .member("failures", static_cast<unsigned long long>(driverFailures_)).member("error", driverError_);
+      .member("failures", static_cast<unsigned long long>(driverFailures_)).member("error", driverError_)
+      .member("overrideAnswers", static_cast<unsigned long long>(overrideAnswers_));
+  const auto values = [&json](const char* key, const uint8_t* v) {
+    json.key(key).beginArray();
+    for (int c = 0; c < 3; ++c) json.value(static_cast<unsigned>(v[c]));
+    json.endArray();
+  };
+  json.key("override");
+  if (overrideKnown_) {
+    const uint8_t* factory = mcu::kDriverFactory[overrideRegister_ - mcu::kDriverFirstRegister];
+    json.beginObject().member("register", static_cast<unsigned>(overrideRegister_));
+    values("value", overrideValue_);
+    values("factory", factory);
+    json.member("changed", std::memcmp(overrideValue_, factory, 3) != 0).endObject();
+  } else {
+    json.null();
+  }
   json.key("registers").beginArray();
   for (std::size_t i = 0; i < driver_.size(); ++i) {
     const DriverRegister& r = driver_[i];
-    if (!r.known) continue;
     json.beginObject().member("register", static_cast<unsigned>(mcu::kDriverFirstRegister + i));
-    json.key("value").beginArray();
-    for (uint8_t v : r.value) json.value(static_cast<unsigned>(v));
-    json.endArray().key("original").beginArray();
-    for (uint8_t v : r.original) json.value(static_cast<unsigned>(v));
-    json.endArray().member("changed", r.changed).endObject();
+    values("factory", mcu::kDriverFactory[i]);
+    if (r.known) values("value", r.value);
+    json.member("known", r.known)
+        .member("changed", r.known && std::memcmp(r.value, mcu::kDriverFactory[i], 3) != 0).endObject();
   }
   json.endArray().endObject();
 }

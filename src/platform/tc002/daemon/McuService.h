@@ -76,8 +76,10 @@ class McuService : public Service {
 
   // The LED driver registers of the stock MCU firmware (McuFrame.h), for bench work over the
   // control socket. Requests queue and run between the power queries, never during a capture,
-  // stream or firmware transfer. A register is written only after it was read, so its first value
-  // can be restored. Each returns an empty string when queued, otherwise why not.
+  // stream or firmware transfer. A write becomes the MCU's saved override (McuFrame.h); restore
+  // writes the factory value of every register known to differ, the override included, so the
+  // override left behind is a factory value. Each returns an empty string when queued, otherwise why
+  // not.
   bool driverRegistersAvailable() const;
   std::string readDriverRegister(uint8_t reg);
   std::string readDriverRegisters();
@@ -105,8 +107,8 @@ class McuService : public Service {
   void driverReply(const mcu::Frame& frame);
 
   struct DriverRegister {
-    bool known = false, changed = false;
-    uint8_t value[3]{}, original[3]{};
+    bool known = false;  // value came from a read or a write in this run
+    uint8_t value[3]{};
   };
   struct DriverJob {
     bool write = false;
@@ -117,7 +119,9 @@ class McuService : public Service {
   std::array<DriverRegister, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> driver_{};
   std::deque<DriverJob> driverJobs_;
   DriverJob driverSent_;
-  uint64_t driverReads_ = 0, driverWrites_ = 0, driverFailures_ = 0;
+  uint64_t driverReads_ = 0, driverWrites_ = 0, driverFailures_ = 0, overrideAnswers_ = 0;
+  bool overrideKnown_ = false;
+  uint8_t overrideRegister_ = 0, overrideValue_[3]{};
   std::string driverError_;
 
   DeviceState& state_;

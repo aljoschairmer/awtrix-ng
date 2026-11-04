@@ -16,8 +16,13 @@ constexpr uint8_t kBattery = 0x03;
 constexpr uint8_t kPcm = 0x06;
 constexpr uint8_t kIdentity = 0x08;
 constexpr uint8_t kVersion = 0x11;
-// The stock firmware V1.0.17 keeps one 8-bit register table per colour for the panel's LED drivers.
-// 0x13 reads a register of all three, 0x12 writes them; the change lasts until the MCU restarts.
+// The stock firmware V1.0.17 keeps one 8-bit register table per colour for the panel's LED drivers
+// (RAM 0x15794, sent to the drivers at start and whenever the panel comes back on). 0x12 is no plain
+// write: it saves its three words as the MCU's single override (settings flash 0x300, marker 0xe5)
+// and sends them to the drivers, but leaves the table alone. At every start the MCU loads the
+// override into the table, so it outlasts restarts; only the last write is kept. 0x13 answers with
+// the override whenever one exists, whatever register was asked, and reads the table only when
+// none does.
 constexpr uint8_t kDriverWrite = 0x12;
 constexpr uint8_t kDriverRead = 0x13;
 constexpr uint8_t kDriverFirstRegister = 0x02;
@@ -41,8 +46,12 @@ void encodePcmRequest(uint16_t halves, uint8_t (&out)[kPcmRequestBytes]);
 bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes]);
 // Payload: one big-endian word per colour, the register in the high byte and its value in the low.
 bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[kDriverWriteBytes]);
-// The values of a 0x12 or 0x13 reply for reg, red first; false when a word names another register.
-bool decodeDriverReply(const Frame& frame, uint8_t reg, uint8_t (&values)[3]);
+// The register and values of a 0x12 or 0x13 reply, red first; false unless all three words name
+// the same register in range.
+bool decodeDriverReply(const Frame& frame, uint8_t& reg, uint8_t (&values)[3]);
+// The table V1.0.17 starts with, red, green and blue per register from kDriverFirstRegister, as read
+// from a stock TC002 before any 0x12.
+extern const uint8_t kDriverFactory[kDriverLastRegister - kDriverFirstRegister + 1][3];
 
 // Resynchronising stream parser: bytes that cannot start a valid frame are skipped one at a
 // time, so garbage, truncated frames and checksum errors never stall later frames.
