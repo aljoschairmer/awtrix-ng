@@ -458,14 +458,16 @@ linearly. `BatteryGauge` (`src/platform/tc002/daemon/`) works from the voltage i
 - **On USB** it only rises, up to 100 % at the charger's full voltage. After every USB change it
   holds until the window is full of new readings.
 - **Display load.** The display draws most of the current, and the cell's voltage sags with it.
-  The runtime reports the load (`panelLoad`). From two readings 5 to 30 s apart whose load differs by
+  The runtime reports the load (`panelLoad`). The MCU's reading is a few seconds old, so a reading
+  counts with its load only once the load held for 8 s (`panelLoadSteady`); otherwise it counts as
+  measured. From two such readings 5 to 30 s apart whose load differs by
   at least 40 per mille, the gauge estimates the sag per per mille; the median of the last nine
   estimates counts once there are three. On battery each reading then moves to a load of
   50 per mille, an assumed typical load while the curves were measured. On USB nothing is learned
   or moved.
 
-`ctl status` shows the learned `batterySag` (mV per per mille), the current `panelLoad` and the last
-`batteryCompensatedMillivolts` under `mcu`.
+`ctl status` shows the learned `batterySag` (mV per per mille), the current `panelLoad`,
+`panelLoadSteady` and the last `batteryCompensatedMillivolts` under `mcu`.
 
 ### Debugging on the clock
 
