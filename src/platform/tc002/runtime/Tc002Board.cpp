@@ -286,6 +286,7 @@ void Tc002Board::show(const Canvas& canvas) {
   {
     LinuxPanelSpan packingSpan(measured, LinuxPanelPhase::Packing);
     frame_.fill(0);
+    uint64_t light = 0;
     for (int y = 0; y < kHeight; ++y) {
       for (int x = 0; x < kWidth; ++x) {
         const uint32_t codes = grade_.applyPixel(canvas.getPixel(x, y));
@@ -293,10 +294,21 @@ void Tc002Board::show(const Canvas& canvas) {
         frame_[offset] = static_cast<uint8_t>(codes >> 16);
         frame_[offset + 1] = static_cast<uint8_t>(codes >> 8);
         frame_[offset + 2] = static_cast<uint8_t>(codes);
+        light += kPanelLight[frame_[offset]] + kPanelLight[frame_[offset + 1]] + kPanelLight[frame_[offset + 2]];
       }
     }
+    lightSum_ += light;
+    ++lightFrames_;
   }
   if (submit(1) && measured) --measured->showFailures;
+}
+
+int Tc002Board::takeLoad() {
+  if (!lightFrames_) return -1;
+  constexpr uint64_t kFullWhite = 65535ull * kWidth * kHeight * 3;
+  const uint64_t perMille = (lightSum_ * 1000 + lightFrames_ * kFullWhite / 2) / (lightFrames_ * kFullWhite);
+  lightSum_ = lightFrames_ = 0;
+  return static_cast<int>(perMille);
 }
 
 void Tc002Board::setBrightness(uint8_t brightness) {

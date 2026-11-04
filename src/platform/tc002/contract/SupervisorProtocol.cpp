@@ -155,6 +155,7 @@ MessageType typeFromName(std::string_view name) {
   if (name == "ready") return MessageType::Ready;
   if (name == "log") return MessageType::Log;
   if (name == "bluetooth") return MessageType::Bluetooth;
+  if (name == "panelLoad") return MessageType::PanelLoad;
   return MessageType::Invalid;
 }
 
@@ -251,6 +252,15 @@ std::string encodeBluetooth(const BluetoothStatus& bluetooth) {
   api::JsonWriter json(out);
   begin(json, "bluetooth");
   json.member("on", bluetooth.on).member("error", bluetooth.error);
+  return finish(json, out);
+}
+
+std::string encodePanelLoad(int perMille) {
+  if (perMille < 0 || perMille > kMaxPanelLoad) return std::string();
+  std::string out;
+  api::JsonWriter json(out);
+  begin(json, "panelLoad");
+  json.member("perMille", perMille);
   return finish(json, out);
 }
 
@@ -484,6 +494,9 @@ bool decodeSupervisorMessage(std::string_view datagram, SupervisorMessage& out) 
     case MessageType::Log:
       ok = readBounded(field("component"), kMaxLogComponent, message.log.component) &&
            validLogComponent(message.log.component) && readBounded(field("text"), kMaxLogText, message.log.text);
+      break;
+    case MessageType::PanelLoad:
+      ok = readInt(field("perMille"), 0, kMaxPanelLoad, message.panelLoad);
       break;
     case MessageType::Ready:
       ok = readBounded(field("board"), 16, message.ready.board) && readInt(field("width"), 8, 128, message.ready.width) &&

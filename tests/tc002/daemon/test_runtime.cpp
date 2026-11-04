@@ -105,6 +105,7 @@ struct Rig {
   FakeControls controls;
   bool reboot = false;
   std::vector<bool> bluetoothRequests;
+  std::vector<int> panelLoads;
   RuntimeLinks::PcmReply pendingPcm;
   std::vector<int> pcmRequests;
   RuntimeLinks::StreamReply streamReply;
@@ -163,6 +164,7 @@ struct Rig {
       pendingPcm = std::move(reply);
     };
     links.bluetooth = [this](bool on) { bluetoothRequests.push_back(on); };
+    links.panelLoad = [this](int perMille) { panelLoads.push_back(perMille); };
     links.wifi = withWifi ? &controls : nullptr;
     links.time = &controls;
     links.hostname = &controls;
@@ -851,6 +853,14 @@ void wrongReadiness() {
   check(rig.rt().consecutiveFailures() >= 1, "counted as failure");
 }
 
+void panelLoadReachesTheGauge() {
+  Rig rig("ok");
+  check(rig.until([&] { return rig.running() && rig.rt().helloReceived(); }, 3000), "runtime ready for a panel load");
+  rig.send(awtrix::tc002::encodePanelLoad(120) + "\n");
+  check(rig.until([&] { return rig.panelLoads == std::vector<int>({120}); }, 3000),
+        "the runtime's display load reaches the supervisor's link");
+}
+
 void bluetoothLifecycle() {
   {
     Rig rig("abrupt");
@@ -1040,6 +1050,7 @@ int main(int argc, char** argv) {
   readinessTimeout();
   stubbornChild();
   wrongReadiness();
+  panelLoadReachesTheGauge();
   bluetoothLifecycle();
   microphoneLifecycle();
   microphoneStreamLifecycle();

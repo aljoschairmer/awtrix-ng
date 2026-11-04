@@ -1,6 +1,8 @@
 #include "platform/tc002/daemon/BatteryGauge.h"
 
 #include <algorithm>
+#include <cmath>
+#include <cstdlib>
 
 namespace awtrix::tc002d {
 
@@ -45,12 +47,43 @@ int BatteryGauge::estimate(int millivolts, bool usb) {
   return usb ? lookup(kCharge, millivolts) : lookup(kDischarge, millivolts);
 }
 
-void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs) {
+void BatteryGauge::learn(int millivolts, bool usb, int64_t nowMs, int load) {
+  const bool paired = lastLoad_ >= 0 && load >= 0 && !usb && !lastUsb_ && nowMs - lastAt_ >= kLearnMinMs &&
+                      nowMs - lastAt_ <= kLearnMaxMs && std::abs(load - lastLoad_) >= kMinLoadStep;
+  if (paired) {
+    const double estimate = static_cast<double>(lastMillivolts_ - millivolts) / (load - lastLoad_);
+    // A step against the load is noise on a flat cell; it counts as no sag rather than skewing the median.
+    if (estimate <= kMaxSag) {
+      sags_[sagNext_] = std::max(0.0, estimate);
+      sagNext_ = (sagNext_ + 1) % sags_.size();
+      if (sagCount_ < sags_.size()) ++sagCount_;
+      if (sagCount_ >= 3) {
+        std::array<double, kSagSamples> sorted{};
+        std::copy(sags_.begin(), sags_.begin() + static_cast<std::ptrdiff_t>(sagCount_), sorted.begin());
+        std::nth_element(sorted.begin(), sorted.begin() + static_cast<std::ptrdiff_t>(sagCount_ / 2),
+                         sorted.begin() + static_cast<std::ptrdiff_t>(sagCount_));
+        sag_ = sorted[sagCount_ / 2];
+      }
+    }
+  }
+  if (load >= 0 && (lastLoad_ < 0 || nowMs - lastAt_ >= kLearnMinMs || usb != lastUsb_)) {
+    lastMillivolts_ = millivolts;
+    lastLoad_ = load;
+    lastUsb_ = usb;
+    lastAt_ = nowMs;
+  }
+}
+
+void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs, int load) {
   if (millivolts < 0) return;
+  learn(millivolts, usb, nowMs, load);
+  if (!usb && load >= 0) millivolts += static_cast<int>(std::lround(sag_ * (load - kReferenceLoad)));
+  compensated_ = millivolts;
   if (percent_ < 0 || usb != usb_) {
     if (percent_ < 0) percent_ = estimate(millivolts, usb);
     usb_ = usb;
     count_ = next_ = 0;
+    risen_ = 0;
   } else if (nowMs - acceptedAt_ < kSpacingMs) {
     return;
   }
@@ -62,7 +95,23 @@ void BatteryGauge::sample(int millivolts, bool usb, int64_t nowMs) {
   auto sorted = window_;
   std::nth_element(sorted.begin(), sorted.begin() + sorted.size() / 2, sorted.end());
   const int now = estimate(sorted[sorted.size() / 2], usb);
-  percent_ = usb ? std::max(percent_, now) : std::min(percent_, now);
+  if (!settled_) {
+    // The first sample may come under the boot load; the first full window replaces it.
+    settled_ = true;
+    percent_ = now;
+  } else if (usb) {
+    percent_ = std::max(percent_, now);
+  } else if (now < percent_) {
+    percent_ = now;
+    risen_ = 0;
+  } else if (now >= percent_ + kRiseMargin) {
+    if (++risen_ >= window_.size()) {
+      ++percent_;
+      risen_ = 0;
+    }
+  } else {
+    risen_ = 0;
+  }
 }
 
 }
