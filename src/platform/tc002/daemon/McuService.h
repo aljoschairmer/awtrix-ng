@@ -76,11 +76,15 @@ class McuService : public Service {
 
   // The LED driver registers of the stock MCU firmware (McuFrame.h), for bench work over the
   // control socket. Requests queue and run between the power queries, never during a capture,
-  // stream or firmware transfer. A write becomes the MCU's saved override (McuFrame.h); restore
-  // writes the factory value of every register known to differ, the override included, so the
-  // override left behind is a factory value. Each returns an empty string when queued, otherwise why
-  // not.
+  // stream or firmware transfer. With MCU build 14 (driverTableAvailable) reads and writes use the
+  // table commands 0x0a and 0x09, which neither save nor meet the stock override; restore clears the
+  // override and writes every register's factory value. On the stock commands alone a write becomes
+  // the MCU's saved override (McuFrame.h), and restore writes the factory value of every register
+  // known to differ, the override included, so the override left behind is a factory value. Each
+  // returns an empty string when queued, otherwise why not.
   bool driverRegistersAvailable() const;
+  bool driverTableAvailable() const;
+  std::string clearDriverOverride();
   std::string readDriverRegister(uint8_t reg);
   std::string readDriverRegisters();
   std::string writeDriverRegister(uint8_t reg, const uint8_t (&values)[3]);
@@ -110,11 +114,13 @@ class McuService : public Service {
     bool known = false;  // value came from a read or a write in this run
     uint8_t value[3]{};
   };
+  enum class DriverOp : uint8_t { Read, Write, Clear };
   struct DriverJob {
-    bool write = false;
+    DriverOp op = DriverOp::Read;
     uint8_t reg = 0;
     uint8_t values[3]{};
   };
+  void driverFailed(const std::string& why);
   static constexpr std::size_t kDriverQueue = 64;
   std::array<DriverRegister, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> driver_{};
   std::deque<DriverJob> driverJobs_;

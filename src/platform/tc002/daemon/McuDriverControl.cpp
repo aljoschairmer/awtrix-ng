@@ -79,6 +79,7 @@ void addDriverRegisterCommands(ControlRegistry& control, McuService& mcu) {
     return reply(error);
   });
   control.add("mcu-register-restore", [&mcu](std::string_view) { return reply(mcu.restoreDriverRegisters()); });
+  control.add("mcu-register-clear-override", [&mcu](std::string_view) { return reply(mcu.clearDriverOverride()); });
 }
 
 }

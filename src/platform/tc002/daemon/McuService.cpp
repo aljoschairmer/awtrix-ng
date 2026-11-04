@@ -259,6 +259,9 @@ void McuService::handle(const mcu::Frame& frame, int64_t nowMs) {
       return;
     case mcu::kDriverRead:
     case mcu::kDriverWrite:
+    case mcu::kDriverTableRead:
+    case mcu::kDriverTableWrite:
+    case mcu::kDriverClearOverride:
       if (outstanding_ != frame.command) break;
       driverReply(frame);
       reply = true;
@@ -300,7 +303,8 @@ void McuService::pump(int64_t nowMs) {
   if (verificationExpired(nowMs)) return;
   if (outstanding_ && nowMs >= outstandingDeadline_) {
     ++timeouts_;
-    if (outstanding_ == mcu::kDriverRead || outstanding_ == mcu::kDriverWrite) {
+    if (outstanding_ == mcu::kDriverRead || outstanding_ == mcu::kDriverWrite || outstanding_ == mcu::kDriverTableRead ||
+        outstanding_ == mcu::kDriverTableWrite || outstanding_ == mcu::kDriverClearOverride) {
       ++driverFailures_;
       driverError_ = "no answer for an LED driver register request";
     }
@@ -555,6 +559,11 @@ bool McuService::driverRegistersAvailable() const {
   return uart_.valid() && !stopping_ && !upgradeHalted_ && !firmwareBusy() && version_ == "V1.0.17";
 }
 
+bool McuService::driverTableAvailable() const {
+  return driverRegistersAvailable() && pcmAvailable() && identity_.version >= 14 &&
+      (identity_.features & mcu::kFeatureDriverTable);
+}
+
 namespace {
 
 std::string hexRegister(uint8_t reg) {
@@ -569,7 +578,7 @@ std::string McuService::readDriverRegister(uint8_t reg) {
     return "register " + hexRegister(reg) + " is outside 0x02 to 0x20";
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
   if (driverJobs_.size() >= kDriverQueue) return "too many register requests queued";
-  driverJobs_.push_back(DriverJob{false, reg, {}});
+  driverJobs_.push_back(DriverJob{DriverOp::Read, reg, {}});
   return {};
 }
 
@@ -577,7 +586,7 @@ std::string McuService::readDriverRegisters() {
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
   if (driverJobs_.size() + driver_.size() > kDriverQueue) return "too many register requests queued";
   for (std::size_t i = 0; i < driver_.size(); ++i)
-    driverJobs_.push_back(DriverJob{false, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}});
+    driverJobs_.push_back(DriverJob{DriverOp::Read, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}});
   return {};
 }
 
@@ -586,14 +595,33 @@ std::string McuService::writeDriverRegister(uint8_t reg, const uint8_t (&values)
     return "register " + hexRegister(reg) + " is outside 0x02 to 0x20";
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
   if (driverJobs_.size() + 1 >= kDriverQueue) return "too many register requests queued";
-  DriverJob job{true, reg, {}};
+  DriverJob job{DriverOp::Write, reg, {}};
   std::memcpy(job.values, values, sizeof job.values);
   driverJobs_.push_back(job);
   return {};
 }
 
+std::string McuService::clearDriverOverride() {
+  if (!driverTableAvailable()) return "clearing the override needs MCU build 14";
+  if (driverJobs_.size() + 1 >= kDriverQueue) return "too many register requests queued";
+  driverJobs_.push_back(DriverJob{DriverOp::Clear, 0, {}});
+  return {};
+}
+
 std::string McuService::restoreDriverRegisters() {
   if (!driverRegistersAvailable()) return "the MCU does not answer LED driver register requests now";
+  if (driverTableAvailable()) {
+    // The table may hold an override loaded at start; clearing it and writing every factory value
+    // leaves nothing behind.
+    if (driverJobs_.size() + 1 + driver_.size() > kDriverQueue) return "too many register requests queued";
+    driverJobs_.push_back(DriverJob{DriverOp::Clear, 0, {}});
+    for (std::size_t i = 0; i < driver_.size(); ++i) {
+      DriverJob job{DriverOp::Write, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}};
+      std::memcpy(job.values, mcu::kDriverFactory[i], sizeof job.values);
+      driverJobs_.push_back(job);
+    }
+    return {};
+  }
   std::array<bool, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> due{};
   std::size_t count = 0;
   for (std::size_t i = 0; i < driver_.size(); ++i) {
@@ -608,7 +636,7 @@ std::string McuService::restoreDriverRegisters() {
     for (std::size_t i = 0; i < driver_.size(); ++i) {
       const bool isOverride = overrideKnown_ && overrideRegister_ == mcu::kDriverFirstRegister + i;
       if (!due[i] || isOverride != (pass == 1)) continue;
-      DriverJob job{true, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}};
+      DriverJob job{DriverOp::Write, static_cast<uint8_t>(mcu::kDriverFirstRegister + i), {}};
       std::memcpy(job.values, mcu::kDriverFactory[i], sizeof job.values);
       driverJobs_.push_back(job);
     }
@@ -619,12 +647,24 @@ std::string McuService::restoreDriverRegisters() {
 bool McuService::sendDriverJob(int64_t nowMs) {
   const DriverJob job = driverJobs_.front();
   driverJobs_.pop_front();
-  uint8_t read[mcu::kDriverReadBytes];
-  uint8_t write[mcu::kDriverWriteBytes];
-  const uint8_t command = job.write ? mcu::kDriverWrite : mcu::kDriverRead;
-  const bool encoded = job.write ? mcu::encodeDriverWrite(job.reg, job.values, write) : mcu::encodeDriverRead(job.reg, read);
-  if (!encoded || !(job.write ? writeFrame(write, sizeof write, command, nowMs) : writeFrame(read, sizeof read, command, nowMs)))
-    return false;
+  const bool table = driverTableAvailable();
+  if (job.op == DriverOp::Clear && !table) return false;
+  uint8_t command = 0;
+  bool sent = false;
+  if (job.op == DriverOp::Clear) {
+    uint8_t clear[mcu::kQueryBytes];
+    command = mcu::kDriverClearOverride;
+    sent = mcu::encodeQuery(command, clear) && writeFrame(clear, sizeof clear, command, nowMs);
+  } else if (job.op == DriverOp::Write) {
+    uint8_t write[mcu::kDriverWriteBytes];
+    command = table ? mcu::kDriverTableWrite : mcu::kDriverWrite;
+    sent = mcu::encodeDriverWrite(job.reg, job.values, write, command) && writeFrame(write, sizeof write, command, nowMs);
+  } else {
+    uint8_t read[mcu::kDriverReadBytes];
+    command = table ? mcu::kDriverTableRead : mcu::kDriverRead;
+    sent = mcu::encodeDriverRead(job.reg, read, command) && writeFrame(read, sizeof read, command, nowMs);
+  }
+  if (!sent) return false;
   driverSent_ = job;
   ++queries_;
   outstanding_ = command;
@@ -634,15 +674,29 @@ bool McuService::sendDriverJob(int64_t nowMs) {
 
 void McuService::driverReply(const mcu::Frame& frame) {
   const DriverJob job = driverSent_;
+  if (frame.command == mcu::kDriverClearOverride) {
+    overrideKnown_ = false;
+    Log::line("mcu", "LED driver override cleared");
+    return;
+  }
   uint8_t reg = 0, values[3];
-  if (!mcu::decodeDriverReply(frame, reg, values) || (frame.command == mcu::kDriverWrite && reg != job.reg)) {
-    ++driverFailures_;
-    driverError_ = "the MCU did not answer for LED driver register " + hexRegister(job.reg);
+  const bool table = frame.command == mcu::kDriverTableRead || frame.command == mcu::kDriverTableWrite;
+  if (table && frame.length == 0) {
+    driverFailed("the MCU refused the request for LED driver register " + hexRegister(job.reg));
+    return;
+  }
+  if (!mcu::decodeDriverReply(frame, reg, values) || ((table || frame.command == mcu::kDriverWrite) && reg != job.reg)) {
+    driverFailed("the MCU did not answer for LED driver register " + hexRegister(job.reg));
     return;
   }
   DriverRegister& r = driver_[reg - mcu::kDriverFirstRegister];
   std::memcpy(r.value, values, sizeof r.value);
   r.known = true;
+  if (frame.command == mcu::kDriverTableWrite) {
+    ++driverWrites_;
+    Log::line("mcu", "LED driver register 0x%02x set to %02x %02x %02x", reg, values[0], values[1], values[2]);
+    return;
+  }
   if (frame.command == mcu::kDriverWrite) {
     // The answer repeats the request, which is now the override; reading it back would only
     // return the override again.
@@ -667,8 +721,14 @@ void McuService::driverReply(const mcu::Frame& frame) {
   ++driverReads_;
 }
 
+void McuService::driverFailed(const std::string& why) {
+  ++driverFailures_;
+  driverError_ = why;
+}
+
 void McuService::appendDriverRegisters(api::JsonWriter& json) const {
   json.beginObject().member("available", driverRegistersAvailable()).member("firmware", version_)
+      .member("backend", driverTableAvailable() ? "extension" : "stock")
       .member("queued", static_cast<unsigned long long>(driverJobs_.size()))
       .member("reads", static_cast<unsigned long long>(driverReads_))
       .member("writes", static_cast<unsigned long long>(driverWrites_))

@@ -25,6 +25,13 @@ constexpr uint8_t kVersion = 0x11;
 // none does.
 constexpr uint8_t kDriverWrite = 0x12;
 constexpr uint8_t kDriverRead = 0x13;
+// AWTRIX MCU extension build 14 (feature kFeatureDriverTable, tools/tc002/mcu/extension/registers.S):
+// 0x09 and 0x0a take the payloads of 0x12 and 0x13 but work on the table itself, without flash;
+// 0x0b clears the stock override. A refused request is answered with no payload.
+constexpr uint8_t kDriverTableWrite = 0x09;
+constexpr uint8_t kDriverTableRead = 0x0a;
+constexpr uint8_t kDriverClearOverride = 0x0b;
+constexpr uint8_t kFeatureDriverTable = 0x10;
 constexpr uint8_t kDriverFirstRegister = 0x02;
 constexpr uint8_t kDriverLastRegister = 0x20;
 constexpr uint8_t kAck = 0xfe;
@@ -43,11 +50,12 @@ struct Frame {
 bool encodeQuery(uint8_t command, uint8_t (&out)[kQueryBytes]);
 void encodePcmRequest(uint16_t halves, uint8_t (&out)[kPcmRequestBytes]);
 // Payload: the register once per colour (red, green, blue). False outside the register range.
-bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes]);
+bool encodeDriverRead(uint8_t reg, uint8_t (&out)[kDriverReadBytes], uint8_t command = kDriverRead);
 // Payload: one big-endian word per colour, the register in the high byte and its value in the low.
-bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[kDriverWriteBytes]);
-// The register and values of a 0x12 or 0x13 reply, red first; false unless all three words name
-// the same register in range.
+bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[kDriverWriteBytes],
+                       uint8_t command = kDriverWrite);
+// The register and values of a 0x12, 0x13, 0x09 or 0x0a reply, red first; false unless all three
+// words name the same register in range.
 bool decodeDriverReply(const Frame& frame, uint8_t& reg, uint8_t (&values)[3]);
 // The table V1.0.17 starts with, red, green and blue per register from kDriverFirstRegister, as read
 // from a stock TC002 before any 0x12.
