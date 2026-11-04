@@ -266,6 +266,8 @@ These keys appear only when the hardware is there:
 | `batteryVoltage` | number | V, 2 decimals | the battery has reported its charge. The voltage of the battery |
 | `lowBattery` | boolean | - | the battery has reported its charge. `true` while `batteryPercent` is below `lowBatteryThreshold`. Always `false` when the threshold is `0` |
 | `usbPower` | boolean | - | the clock has reported its power supply. `true` while it is on USB power and charges |
+| `batteryMillivolts` | integer | mV | the battery has reported its charge. The battery voltage as the clock measures it, unrounded |
+| `panelLoad` | integer | 0–1000 ‰ | the display has shown a frame. Light of the last 2 s against a full-white frame at full brightness: the display's share of the battery current |
 <!-- /only -->
 
 <!-- only esp32 esp32-s3 -->

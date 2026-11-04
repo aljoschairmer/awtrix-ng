@@ -467,7 +467,12 @@ linearly. `BatteryGauge` (`src/platform/tc002/daemon/`) works from the voltage i
   or moved.
 
 `ctl status` shows the learned `batterySag` (mV per per mille), the current `panelLoad`,
-`panelLoadSteady` and the last `batteryCompensatedMillivolts` under `mcu`.
+`panelLoadSteady` and the last `batteryCompensatedMillivolts` under `mcu`. `batterySagPairs` lists
+the reading pairs behind `batterySag`, oldest first, as `[seconds ago, load before, load after,
+mV before, mV after]`; `batterySagRejected` counts the pairs dropped as too steep to be sag.
+On battery, when ADB is gone, `GET /api/v1/device` still shows `panelLoad` and the unrounded
+`batteryMillivolts`, so a PC can follow both over Wi-Fi. Full white at brightness 150 is about
+591 per mille.
 
 ### Debugging on the clock
 

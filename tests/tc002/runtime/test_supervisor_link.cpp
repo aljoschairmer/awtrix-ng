@@ -296,14 +296,21 @@ void runtimeState() {
   message.power = {false, 64, 3900};
   supervision.apply(message);
   require(!rt.externalPower && rt.batteryPercent == 64, "supply and battery follow each report");
-  require(members() == "{\"usbPower\":false}" && powerEvents == 2, "unplugging is reported and pushed");
+  require(members() == "{\"usbPower\":false,\"batteryMillivolts\":3900}" && powerEvents == 2,
+          "unplugging is reported and pushed, with the unrounded battery voltage");
+  supervision.setPanelLoad(172);
+  require(members() == "{\"usbPower\":false,\"batteryMillivolts\":3900,\"panelLoad\":172}",
+          "device state shows the display load");
   message.power = {true, 63, 3890, false};
   supervision.apply(message);
-  require(!rt.externalPower && rt.batteryPercent == 63 && members() == "{\"usbPower\":false}" && powerEvents == 2,
+  require(!rt.externalPower && rt.batteryPercent == 63 &&
+              members() == "{\"usbPower\":false,\"batteryMillivolts\":3890,\"panelLoad\":172}" && powerEvents == 2,
           "an unknown supply keeps the last report and pushes nothing");
   message.power = {true, 63, 3890};
   supervision.apply(message);
-  require(rt.externalPower && members() == "{\"usbPower\":true}" && powerEvents == 3, "a known supply applies again");
+  require(rt.externalPower && members() == "{\"usbPower\":true,\"batteryMillivolts\":3890,\"panelLoad\":172}" &&
+              powerEvents == 3,
+          "a known supply applies again");
 
   auto facts = [&] {
     DeviceFacts out;
