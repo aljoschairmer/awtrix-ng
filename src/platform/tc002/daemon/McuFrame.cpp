@@ -73,9 +73,20 @@ bool encodeDriverWrite(uint8_t reg, const uint8_t (&values)[3], uint8_t (&out)[k
   return true;
 }
 
-bool decodeDriverReply(const Frame& frame, uint8_t reg, uint8_t (&values)[3]) {
+const uint8_t kDriverFactory[kDriverLastRegister - kDriverFirstRegister + 1][3] = {
+    {15, 15, 15},    {63, 63, 63}, {0, 0, 0},    {0, 0, 0},       {0, 0, 0},       {36, 36, 37},
+    {0, 0, 0},       {0, 0, 0},    {128, 128, 128}, {12, 12, 12}, {8, 24, 48},     {0, 0, 0},
+    {5, 5, 5},       {0, 0, 0},    {0, 0, 0},    {0, 0, 0},       {0, 0, 0},       {0, 0, 0},
+    {20, 34, 50},    {0, 0, 0},    {54, 50, 46}, {0, 0, 0},       {3, 3, 3},       {4, 3, 3},
+    {128, 128, 128}, {20, 20, 20}, {18, 143, 143}, {0, 0, 0},     {32, 32, 32},    {12, 12, 12},
+    {0, 0, 0},
+};
+
+bool decodeDriverReply(const Frame& frame, uint8_t& reg, uint8_t (&values)[3]) {
   if ((frame.command != kDriverRead && frame.command != kDriverWrite) || frame.length != 6) return false;
-  for (int colour = 0; colour < 3; ++colour)
+  reg = frame.payload[0];
+  if (reg < kDriverFirstRegister || reg > kDriverLastRegister) return false;
+  for (int colour = 1; colour < 3; ++colour)
     if (frame.payload[colour * 2] != reg) return false;
   for (int colour = 0; colour < 3; ++colour) values[colour] = frame.payload[colour * 2 + 1];
   return true;

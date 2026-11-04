@@ -348,8 +348,10 @@ void driverRegisters() {
   check(has(commands.run("mcu-register-read", "21"), "outside"), "registers past 0x20 are refused");
   check(has(commands.run("mcu-register-read", "zz"), "payload"), "a malformed register is refused");
   check(has(commands.run("mcu-register-write", "0c 08 18"), "payload"), "a write needs three values");
-  check(has(commands.run("mcu-register-write", "0c 08 18 30"), "read register 0x0c first"),
-        "a register is written only after it was read");
+  std::string table = commands.run("mcu-registers");
+  check(has(table, "\"override\":null") &&
+            has(table, "{\"register\":12,\"factory\":[8,24,48],\"known\":false,\"changed\":false}"),
+        "the factory table of V1.0.17 is known before any read: " + table);
   check(commands.run("mcu-register-read", "0x0c") == "{\"ok\":true}", "a read is queued");
   check(mcu.nextDeadlineMs() <= now, "a queued request is due at once");
   mcu.onTime(now);
@@ -357,8 +359,8 @@ void driverRegisters() {
   check(device.take(30).empty(), "one request in flight");
   device.send(frame(0x13, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
   serve(mcu, now);
-  std::string table = commands.run("mcu-registers");
-  check(has(table, "\"register\":12,\"value\":[8,24,48],\"original\":[8,24,48],\"changed\":false"),
+  table = commands.run("mcu-registers");
+  check(has(table, "\"register\":12,\"factory\":[8,24,48],\"value\":[8,24,48],\"known\":true,\"changed\":false"),
         "the answer fills the table: " + table);
 
   check(commands.run("mcu-register-write", "0c 10 18 30") == "{\"ok\":true}", "a write is queued");
@@ -367,30 +369,39 @@ void driverRegisters() {
         "write: command 12 with a word per colour, register high");
   device.send(frame(0x12, {0x0c, 0x10, 0x0c, 0x18, 0x0c, 0x30}));
   serve(mcu, now);
-  check(device.take() == frame(0x13, {0x0c, 0x0c, 0x0c}), "the write is read back");
+  check(device.take(30).empty(), "a write is not read back: the MCU would only answer with the override");
+  table = commands.run("mcu-registers");
+  check(has(table, "\"override\":{\"register\":12,\"value\":[16,24,48],\"factory\":[8,24,48],\"changed\":true}") &&
+            has(table, "\"value\":[16,24,48],\"known\":true,\"changed\":true") && has(table, "\"writes\":1"),
+        "the write is the MCU's override and marks the change: " + table);
+
+  check(commands.run("mcu-register-read", "14") == "{\"ok\":true}", "another read");
+  mcu.onTime(now);
+  device.take();
   device.send(frame(0x13, {0x0c, 0x10, 0x0c, 0x18, 0x0c, 0x30}));
   serve(mcu, now);
   table = commands.run("mcu-registers");
-  check(has(table, "\"value\":[16,24,48],\"original\":[8,24,48],\"changed\":true") && has(table, "\"writes\":1"),
-        "the table keeps the first value and marks the change: " + table);
+  check(has(table, "\"failures\":0") && has(table, "\"overrideAnswers\":1") && has(table, "saved override, register 0x0c") &&
+            has(table, "{\"register\":20,\"factory\":[20,34,50],\"known\":false,\"changed\":false}"),
+        "an answer with the override is no failure and no value for 0x14: " + table);
 
   check(commands.run("mcu-register-restore") == "{\"ok\":true}", "restore is queued");
   mcu.onTime(now);
-  check(device.take() == frame(0x12, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}), "restore writes the first value");
+  check(device.take() == frame(0x12, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}), "restore writes the factory value");
   device.send(frame(0x12, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
   serve(mcu, now);
-  device.take();
-  device.send(frame(0x13, {0x0c, 0x08, 0x0c, 0x18, 0x0c, 0x30}));
-  serve(mcu, now);
-  check(has(commands.run("mcu-registers"), "\"changed\":false"), "restored");
+  check(device.take(30).empty(), "only the changed register is written");
+  table = commands.run("mcu-registers");
+  check(has(table, "\"override\":{\"register\":12,\"value\":[8,24,48],\"factory\":[8,24,48],\"changed\":false}"),
+        "the override left behind is the factory value: " + table);
 
-  check(commands.run("mcu-register-read", "14") == "{\"ok\":true}", "another read");
+  check(commands.run("mcu-register-read", "14") == "{\"ok\":true}", "a read of no register");
   mcu.onTime(now);
   device.take();
   device.send(frame(0x13, {0, 0, 0, 0, 0, 0}));
   serve(mcu, now);
   table = commands.run("mcu-registers");
-  check(has(table, "did not answer for LED driver register 0x14") && !has(table, "\"register\":20"),
+  check(has(table, "did not answer for LED driver register 0x14") && has(table, "\"failures\":1"),
         "an answer for no register is an error, not a value: " + table);
 
   check(commands.run("mcu-register-read", "all") == "{\"ok\":true}", "all registers are queued");
@@ -404,6 +415,23 @@ void driverRegisters() {
   mcu.onTime(now);
   check(device.take() == frame(0x13, {0x03, 0x03, 0x03}) && has(commands.run("mcu-registers"), "no answer"),
         "a silent MCU costs that request only");
+
+  Mcu earlier;
+  McuOptions earlierOptions;
+  earlierOptions.path = earlier.slave;
+  McuService fresh(state, earlierOptions);
+  Commands freshCommands;
+  addDriverRegisterCommands(freshCommands, fresh);
+  bootTo(earlier, fresh, now, "V1.0.17");
+  check(freshCommands.run("mcu-register-read", "02") == "{\"ok\":true}", "a read after a restart");
+  fresh.onTime(now);
+  earlier.take();
+  earlier.send(frame(0x13, {0x16, 0x20, 0x16, 0x20, 0x16, 0x20}));
+  serve(fresh, now);
+  check(freshCommands.run("mcu-register-restore") == "{\"ok\":true}", "restore after a restart");
+  fresh.onTime(now);
+  check(earlier.take() == frame(0x12, {0x16, 0x36, 0x16, 0x32, 0x16, 0x2e}),
+        "a changed override from an earlier run goes back to its factory value");
 
   Mcu other;
   McuOptions otherOptions;
