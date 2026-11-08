@@ -484,7 +484,7 @@ class BuildContracts(unittest.TestCase):
         # committed LF bytes in snapshot_git's independently invoked archive.
         git("config", "core.autocrlf", "true")
         git("config", "core.eol", "crlf")
-        directories = {"src", "lib", "cmake", "LICENSES", "packaging/linux"}
+        directories = {"src", "lib", "cmake", "LICENSES", "packaging/linux", "assets/tc002/vad"}
         expected = {}
         for name in build.APP_PATHS:
             relative = name + "/fixture.txt" if name in directories else name

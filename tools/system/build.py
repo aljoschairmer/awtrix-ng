@@ -26,7 +26,9 @@ LOCK = Path(__file__).with_name("sources.lock.json")
 EXTERNAL = REPO / "firmware/buildroot"
 APP_PATHS = ["CMakeLists.txt", "cmake", "version", "src", "lib", "packaging/linux", "webui/index.html",
              "webui/src", "scripts/webui_source.py", "scripts/berry_api.py",
-             "LICENSE.md", "LICENSES", "THIRD-PARTY-NOTICES.md", "tools/system/components.json"]
+             "LICENSE.md", "LICENSES", "THIRD-PARTY-NOTICES.md", "tools/system/components.json",
+             # vendored components the manifest lists; the qualification checks their files
+             "assets/speech/voice.atts", "assets/tc002/vad"]
 MARKER = ".awtrix-system-work.json"
 REQUIRED_TOOLS = ("make", "gcc", "g++", "rsync", "patch", "bc", "bison",
                   "flex", "file", "unzip", "cpio", "git", "wget", "xz")
