@@ -9,8 +9,9 @@ struct RuntimeState;
 
 namespace script {
 
-// The prelude uses these ordinals; Release belongs to the host when a script stops.
-enum class SoundAction : uint8_t { Play, Effect, Stop, StopMusic, Release };
+// The prelude uses these ordinals; Release belongs to the host when a script stops. StopRadio and
+// RadioStatic (json: the level) are import radio's.
+enum class SoundAction : uint8_t { Play, Effect, Stop, StopMusic, Release, StopRadio, RadioStatic };
 
 // Borrowed application operations. Missing operations return an unavailable result.
 class IScriptApplication {
@@ -26,7 +27,8 @@ class IScriptApplication {
   virtual int sound(SoundAction, const std::string&, const std::string&, std::string&) { return 0; }
   virtual bool soundPlaying() { return false; }
   virtual bool audioPlaying() { return false; }
-  // MP3, RTTTL, song, speech, track, radio, URL, effect and clip occupy bits 0..8.
+  // MP3, RTTTL, song, speech, track, radio, URL, effect and clip occupy bits 0..8; the radio's AAC
+  // and static bits 9 and 10.
   virtual int soundCaps() { return 0; }
   virtual void rotateNext() {}
   virtual void rotatePrevious() {}

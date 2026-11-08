@@ -4050,12 +4050,18 @@ components:
         station:
           x-only: [esp32-s3, tc002]
           description: 'Internet radio, at volume × radioVolume: a name from the stored list, a position in it (from 0),
-            or a stream address. A playlist address (.m3u, .pls) plays its first entry. A 200 means tuning started.
-            A stream that turns out to be unplayable is reported in radio.error. Not in a list and not in a notification.'
+            or a stream address. A playlist address (.m3u, .pls) plays its first entry. MP3, and on the TC002 AAC,
+            AAC+ and HE-AAC v2 in ADTS (HLS, Ogg, Opus and FLAC are not played). A 200 means tuning started. A stream
+            that turns out to be unplayable is reported in radio.error and radio.fault. Not in a list and not in a
+            notification.'
           oneOf:
           - type: string
           - type: integer
             minimum: 0
+        name: {x-only: [esp32-s3, tc002], type: string, maxLength: 64, description: 'With station: the name radio.station shows for a stream address'}
+        id: {x-only: [esp32-s3, tc002], type: string, maxLength: 64, description: "With station: the caller's own id for it, echoed by radio.state() while this station plays"}
+        fade: {x-only: [tc002], type: integer, minimum: 0, maximum: 10000, description: 'With station: the station rises from silence over this many milliseconds once it plays'}
+        noise: {x-only: [tc002], type: integer, minimum: 0, maximum: 100, description: 'With station: radio static at this level while the station connects and buffers; it fades out under the first frames'}
         loop: {type: boolean, default: false, description: "Repeat until stopped or replaced by a new alert. In a notification, while it is shown"}
       oneOf:
       - required: [file]
@@ -4097,6 +4103,22 @@ components:
               type: integer
               description: "Milliseconds the player spent waiting for stream data. A high value points to a slow network rather than slow decoding. Counts from boot like underruns. It does not reset per station."
             bufferBytes: {type: integer, description: Bytes received from the stream and not played yet}
+            state:
+              type: string
+              enum: [idle, connecting, buffering, playing, error, stopped]
+              description: 'What the station is doing. Idle where the output does not report it (the ESP32)'
+            fault:
+              type: [string, 'null']
+              enum: [url, connect, timeout, tls, http, playlist, codec, undecodable, speaker, null]
+              description: 'Why the last attempt failed. codec, undecodable, url and speaker are for good; the others are retried'
+            httpStatus: {type: integer, description: "The station's last HTTP status, 0 before it answered"}
+            codec: {type: string, description: 'mp3, aac, he-aac or he-aac-v2 once a frame decoded'}
+            bitrate: {type: integer, description: 'kbit/s: as decoded, else what the station announced (icy-br)'}
+            sampleRate: {type: integer}
+            channels: {type: integer}
+            stationName: {type: string, description: "The station's own name (icy-name)"}
+            bufferPercent: {type: integer, minimum: 0, maximum: 100}
+            noise: {type: boolean, description: 'Radio static is set to play, alone or under a station (scripts: radio.noise)'}
         app:
           allOf: [{$ref: '#/components/schemas/AudioGroupState'}]
           description: What scripts play.

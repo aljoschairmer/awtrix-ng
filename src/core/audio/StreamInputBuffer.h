@@ -13,17 +13,23 @@ namespace awtrix::audio {
 // ring. Sync scanning keeps the final three bytes when it cannot yet see a complete header.
 class StreamInputBuffer {
  public:
-  // The largest supported Layer III frame, padding included.
+  // The largest supported Layer III frame, padding included: the default staging area.
   static constexpr std::size_t kMaxFrameBytes = 1441;
+  // An ADTS frame's 13-bit length: the staging area a ring that may carry AAC needs.
+  static constexpr std::size_t kMaxAdtsFrameBytes = 8192;
 
   struct View {
     const uint8_t* data;
     std::size_t size;
   };
 
-  explicit StreamInputBuffer(std::size_t capacity)
-      : storage_(capacity ? new uint8_t[capacity + kMaxFrameBytes] : nullptr),
-        capacity_(capacity) {}
+  explicit StreamInputBuffer(std::size_t capacity, std::size_t maxFrameBytes = kMaxFrameBytes)
+      : storage_(capacity ? new uint8_t[capacity + maxFrameBytes] : nullptr),
+        capacity_(capacity),
+        maxFrame_(maxFrameBytes) {}
+
+  // The longest frame decoderView() always shows whole.
+  std::size_t maxFrameBytes() const { return maxFrame_; }
 
   std::size_t size() const { return size_; }
   std::size_t room() const { return capacity_ - size_; }
@@ -57,9 +63,9 @@ class StreamInputBuffer {
   View decoderView() {
     if (!size_) return {nullptr, 0};
     const std::size_t first = std::min(size_, capacity_ - head_);
-    if (first == size_ || first >= kMaxFrameBytes)
+    if (first == size_ || first >= maxFrame_)
       return {storage_.get() + head_, first};
-    const std::size_t bytes = std::min(size_, kMaxFrameBytes);
+    const std::size_t bytes = std::min(size_, maxFrame_);
     uint8_t* staged = storage_.get() + capacity_;
     std::memcpy(staged, storage_.get() + head_, first);
     std::memcpy(staged + first, storage_.get(), bytes - first);
@@ -69,6 +75,7 @@ class StreamInputBuffer {
  private:
   std::unique_ptr<uint8_t[]> storage_;
   std::size_t capacity_;
+  std::size_t maxFrame_;
   std::size_t head_ = 0;
   std::size_t size_ = 0;
 };

@@ -598,6 +598,37 @@
       ],
       "vendored": true,
       "version": "v2"
+    },
+    {
+      "id": "fdk-aac",
+      "name": "Fraunhofer FDK AAC Codec Library for Android",
+      "version": "2.0.3",
+      "origin": {
+        "url": "https://github.com/mstorsjo/fdk-aac",
+        "reference": "c41c3c7516ea8d0d78a53b96b30bed3a29745cc6",
+        "note": "the decoder part only: libAACdec, libArithCoding, libDRCdec, libFDK, libMpegTPDec, libPCMutils, libSACdec, libSBRdec and libSYS with the sources the upstream CMakeLists.txt names for the decoder (lib/fdk-aac/sources.txt); encoders, xHE-AAC, tools and build files left out; release 2.0.3 is the last decoder release, the commit adds only the separate xHE-AAC encoder"
+      },
+      "vendored": true,
+      "paths": [
+        "lib/fdk-aac"
+      ],
+      "files_sha256": "20891221867f1eef888f32aeee4c0afb9c61bc6dfce05435285c8b31e14297d0",
+      "patches": [],
+      "license": {
+        "spdx": "FDK-AAC",
+        "name": "Software License for The Fraunhofer FDK AAC Codec Library for Android",
+        "file": "LICENSES/FDK-AAC.txt",
+        "sha256": "95ec80da40b4af12ad4c4f3158c9cfb80f2479f3246e4260cb600827cc8c7836"
+      },
+      "notice": "Fraunhofer FDK AAC Codec Library for Android",
+      "targets": [
+        "linux"
+      ],
+      "review": {
+        "date": "2026-11-08",
+        "decision": "accepted",
+        "rationale": "The FDK AAC licence permits redistribution in source and binary form without copyright fees if its full text travels with the source and the binary documentation, the complete source of the library and of any change is available free of charge to binary recipients (it is in this public repository, unchanged), Fraunhofer's name is not used for endorsement and no licence fee is charged. It grants no patent rights; docs/guides/radio.md says so. Text in LICENSES/FDK-AAC.txt and lib/fdk-aac/NOTICE, row in THIRD-PARTY-NOTICES.md, both in the TC002 bundle's licenses.txt.gz. Not compiled into the ESP32 firmware (platformio.ini leaves src/core/radio/stream/ out)."
+      }
     }
   ],
   "notice_exclusions": [

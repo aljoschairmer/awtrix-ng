@@ -691,6 +691,60 @@ return Tuner()
   most beats.
 <!-- /only -->
 
+<!-- only tc002 -->
+## The radio for an app {#radio}
+
+`import radio` lets an app tune the clock's radio itself: start a station by its address, stop it,
+play the static between stations, and know at every moment whether the station connects, buffers,
+plays or failed, and why. The station keeps playing when your app leaves the display, like the
+radio from the menu.
+
+```berry
+import radio
+
+class Tuner
+  def init()
+    radio.on_change(def (s)
+      if s['state'] == 'error' && s['id'] == 'mine' log('no signal: ' + s['error']) end
+    end)
+  end
+  def on_knob(e)
+    if e == 'press'
+      radio.play('https://example.com/stream.mp3',
+                 {'name': 'Example FM', 'id': 'mine', 'fade': 1200, 'noise': 35})
+      return true
+    end
+    return false
+  end
+end
+return Tuner()
+```
+
+| Call | Does | Returns |
+|---|---|---|
+| `radio.play(url, opts?)` | starts the station at `url` (MP3 or AAC, a playlist plays its first entry). `opts` may hold `'name'` (shown as the station), `'id'` (your own, echoed by `radio.state()` while this station plays), `'fade'` (it rises from silence over this many ms, up to 10000) and `'noise'` (static at 0..100 while it connects and buffers, fading out under its first notes) | `true`; a bad address raises `value_error` |
+| `radio.stop()` | stops the radio and any static, whoever started it | `true` |
+| `radio.noise(level)` | static at `level` 0..100: alone while no station plays (the sound of turning the dial), or under a station's wait. `0` ends it | `true` |
+| `radio.state()` | what the station is doing, see below. Never `nil` | a map |
+| `radio.on_change(fn)` | calls `fn(state)` when the state, the station, its title, codec or error changes, at most every 250 ms, also while your app is not on the display. `nil` stops it | `nil` |
+| `radio.can(key?)` | `'play'`, `'aac'`, `'noise'`, `'fade'` | a map, or `true`/`false` |
+
+`radio.state()` answers a map:
+
+| Key | Value |
+|---|---|
+| `state` | `'idle'`, `'connecting'`, `'buffering'`, `'playing'`, `'error'` or `'stopped'` |
+| `id`, `name` | what `radio.play()` was given; `''` when the menu, the API or another app started the station |
+| `station_name`, `title` | the station's own name and the song it sends |
+| `error`, `fault`, `http_status`, `retry_ms` | why it failed: `fault` is `'connect'`, `'timeout'`, `'tls'`, `'http'`, `'playlist'`, `'codec'` (a format such as Ogg or HLS), `'undecodable'` or `nil`. `retry_ms` is when the next try comes, `-1` when none comes |
+| `codec`, `bitrate`, `sample_rate`, `channels` | `'mp3'`, `'aac'`, `'he-aac'` or `'he-aac-v2'`, kbit/s, Hz, 1 or 2 |
+| `buffer`, `since_ms` | how full the station's buffer is (0..100) and how long the state has lasted |
+
+A station that fails for good (`retry_ms` is `-1`) stays silent until another one is asked for;
+the others are tried again with the radio's back-off. Static that plays alone ends with
+`radio.noise(0)`, `radio.stop()` or the next station.
+<!-- /only -->
+
 ## Details
 
 ### Calls

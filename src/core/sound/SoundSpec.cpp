@@ -48,7 +48,7 @@ bool validFile(const std::string& value) {
 bool readObject(api::JsonReader r, Origin origin, const std::string& prefix, bool inList,
                 Spec& out, DispatchDetail& d) {
   api::JsonReader at[kSourceCount];
-  api::JsonReader atLoop, atNextBar;
+  api::JsonReader atLoop, atNextBar, atName, atId, atFade, atStatic;
   api::JsonReader it = r;
   if (!it.enterObject()) return fail(d, prefix, "must be a string, object or list");
   while (it.nextMember()) {
@@ -66,6 +66,10 @@ bool readObject(api::JsonReader r, Origin origin, const std::string& prefix, boo
     }
     if (!known && k == "nextBar") {
       atNextBar = it;
+      known = true;
+    }
+    if (!known && (k == "name" || k == "id" || k == "fade" || k == "noise")) {
+      (k == "name" ? atName : k == "id" ? atId : k == "fade" ? atFade : atStatic) = it;
       known = true;
     }
     if (!known) return fail(d, join(prefix, k), "unknown field");
@@ -137,6 +141,29 @@ bool readObject(api::JsonReader r, Origin origin, const std::string& prefix, boo
     if (!atLoop.isBool() || !atLoop.asBool(out.loop))
       return fail(d, join(prefix, "loop"), "must be true or false");
     if (out.kind == Kind::Station) return fail(d, join(prefix, "loop"), "not with station");
+  }
+  const bool stationOption = api::present(atName) || api::present(atId) || api::present(atFade) ||
+                             api::present(atStatic);
+  if (stationOption && out.kind != Kind::Station) {
+    const char* key = api::present(atName) ? "name" : api::present(atId) ? "id" : api::present(atFade) ? "fade" : "noise";
+    return fail(d, join(prefix, key), "only with station");
+  }
+  if (api::present(atName) &&
+      (!atName.isString() || !atName.appendString(out.label) || out.label.size() > 64))
+    return fail(d, join(prefix, "name"), "must be a string of up to 64 bytes");
+  if (api::present(atId) && (!atId.isString() || !atId.appendString(out.id) || out.id.size() > 64))
+    return fail(d, join(prefix, "id"), "must be a string of up to 64 bytes");
+  if (api::present(atFade)) {
+    long long n = 0;
+    if (!atFade.isNumber() || !atFade.isInteger() || !atFade.asLong(n) || n < 0 || n > 10000)
+      return fail(d, join(prefix, "fade"), "must be 0..10000");
+    out.fadeMs = static_cast<int>(n);
+  }
+  if (api::present(atStatic)) {
+    long long n = 0;
+    if (!atStatic.isNumber() || !atStatic.isInteger() || !atStatic.asLong(n) || n < 0 || n > 100)
+      return fail(d, join(prefix, "noise"), "must be 0..100");
+    out.staticLevel = static_cast<int>(n);
   }
   if (api::present(atNextBar)) {
     if (!atNextBar.isBool() || !atNextBar.asBool(out.nextBar))

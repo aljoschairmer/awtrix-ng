@@ -190,6 +190,7 @@ if [ -f "$SRC/assets/speech/voice.atts" ]; then OWN_FILES+=", share/speech/voice
 TEXTS=(
   --text "AWTRIX NG - PolyForm Noncommercial License 1.0.0 - $OWN_FILES" "$SRC/LICENSE.md"
   --text "cpp-httplib - MIT - in bin/awtrix-linux" "$SRC/LICENSES/MIT-cpp-httplib.txt"
+  --text "Fraunhofer FDK AAC Codec Library for Android (decoder, unchanged; source in lib/fdk-aac of the AWTRIX NG repository) - in bin/awtrix-linux" "$SRC/LICENSES/FDK-AAC.txt"
   --text "TensorFlow Lite Micro microfrontend and TensorFlow Lite reference kernels (ported) - Apache-2.0 - in bin/awtrix-linux" "$SRC/LICENSES/Apache-2.0.txt"
   --text "KISS FFT 1.3.0 (ported) - BSD-3-Clause - in bin/awtrix-linux" "$SRC/LICENSES/BSD-3-Clause-KISS-FFT.txt"
   --text "CMUdict and SCOWL - English pronunciation data in bin/awtrix-linux" "$SRC/LICENSES/CMUdict-SCOWL.txt"

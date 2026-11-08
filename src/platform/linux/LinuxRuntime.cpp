@@ -15,6 +15,7 @@
 #include "core/api/JsonWriter.h"
 #include "core/effects/EffectNoise.h"
 #include "core/net/DeviceUrl.h"
+#include "core/radio/RadioScriptState.h"
 #include "core/render/PaletteStore.h"
 #include "media/AwtrixFontAdapter.h"
 #include "persistence/Filesystem.h"
@@ -402,7 +403,8 @@ void LinuxRuntime::composeExtensions() {
         [this](int64_t now, double& beat) { return speaker_ && speaker_->songBeat(now, beat); },
         [this](int64_t now, bool onScreen) { return audioPitch(now, onScreen); }, [] { return monotonicMs(); },
         [this](script::SoundAction action, const std::string& json, const std::string& owner,
-               std::string& error) { return scriptServices_.application->sound(action, json, owner, error); });
+               std::string& error) { return scriptServices_.application->sound(action, json, owner, error); },
+        [this] { return radio::scriptStateJson(engine().state().runtime()); });
     x.list.push_back(x.audio.get());
     x.list.push_back(&x.crypto);
     x.list.push_back(&x.tcp);

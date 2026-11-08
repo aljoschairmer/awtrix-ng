@@ -212,6 +212,12 @@ The messages for rejected sounds are listed in [Audio playback errors](errors.md
 | Radio stations | 32 | `422 validationFailed`, the whole list is rejected |
 | Station name | 1–24 characters | `422 validationFailed`, naming the row that failed |
 | Station URL | at most 255 characters, starting with `http://` or `https://` | `422 validationFailed`, naming the row that failed |
+<!-- only tc002 -->
+| Station formats | MP3; AAC, AAC+ and HE-AAC v2 in ADTS (HE-AAC v2 in stereo) | another format fails for good: `radio.fault` is `codec` and the error names it |
+| `name` and `id` with `station` | 64 bytes each | `422 validationFailed`; in a script, `value_error` |
+| `fade` / `noise` with `station`, `radio.noise()` | 0–10000 ms / 0–100 | `422 validationFailed`; in a script, `value_error` |
+| `radio.on_change()` | one callback per app, called at most every 250 ms; it takes one of the app's 8 timers | a second call replaces the first |
+<!-- /only -->
 
 A station list is saved whole or not at all. One bad row rejects the request, and the stations
 already on AWTRIX stay as they were.

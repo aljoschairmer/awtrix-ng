@@ -37,6 +37,7 @@
 #include "platform/tc002/audio/Tc002AudioStream.h"
 #include "platform/tc002/speech/SpeechSource.h"
 #include "system/MonotonicClock.h"
+#include "test_aacdecoder/vectors.h"
 #include "test_mp3pcm/vectors.h"
 
 using namespace awtrix;
@@ -1648,6 +1649,21 @@ struct IcyServer {
                                std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n";
       write(fd, head.data(), head.size());
       write(fd, body.data(), body.size());
+    } else if (request.rfind("GET /aac-stream", 0) == 0) {
+      // An AAC+ station that calls itself audio/mpeg: the bytes decide.
+      ++streams;
+      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Test AAC\r\n"
+                               "icy-br: 96\r\n\r\n";
+      const auto& v = aacvectors::kAacVectors[0];
+      bool okay = write(fd, head.data(), head.size());
+      while (okay && running) okay = write(fd, v.aac, v.aacBytes);
+    } else if (request.rfind("GET /ogg-stream", 0) == 0) {
+      ++streams;
+      std::string body(40 * 1024, '\x11');
+      body.replace(0, 4, "OggS");
+      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\n\r\n";
+      write(fd, head.data(), head.size());
+      write(fd, body.data(), body.size());
     } else if (request.rfind("GET /broken", 0) == 0) {
       const std::string body(48 * 1024, '\0');
       const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nContent-Length: " +
@@ -1863,15 +1879,76 @@ void test_station_recovers_without_metadata() {
   check(rig.router.playStream(url, "Retry", detail) == DispatchResult::Ok, "retry station accepted");
   check(waitFor([&] {
     rig.tick();
-    return rig.engine.state().runtime().radioError == "connect failed";
-  }, 1500), "the first failed connection is reported");
+    return rig.engine.state().runtime().radioError == "HTTP 503";
+  }, 1500), "the first failed connection is reported with its status");
+  {
+    const radio::Status& status = rig.engine.state().runtime().radio;
+    check(status.phase == radio::Phase::Error && status.fault == radio::Fault::Http && status.httpStatus == 503 &&
+              status.retryMs > 0,
+          "the status names the HTTP error and the retry");
+  }
   check(waitFor([&] {
     rig.tick();
     const auto& state = rig.engine.state().runtime();
     return rig.helper.get(&FakeHelper::received) > 16384 && state.radioPlaying && state.radioError.empty();
   }, 5000), "reconnected audio clears the error and restores playing without metadata");
+  check(waitFor([&] {
+    rig.tick();
+    const radio::Status& status = rig.engine.state().runtime().radio;
+    return status.phase == radio::Phase::Playing && status.codec == "mp3" && status.sampleRate > 0;
+  }, 3000), "the status says the station plays, and in what");
   check(rig.engine.state().runtime().radioTitle.empty(), "recovery did not depend on an ICY title");
   rig.router.stop(sound::Stop::Radio);
+}
+
+// AAC by its bytes, the station's own name and the phases on the way; Ogg is refused by name.
+void test_sink_aac_station_and_status() {
+  IcyServer server(false);
+  Rig rig;
+  DispatchDetail detail;
+  radio::StreamOptions options;
+  options.id = "app:1";
+  options.fadeMs = 300;
+  options.staticLevel = 40;
+  const std::string base = "http://127.0.0.1:" + std::to_string(server.port);
+  check(rig.router.playStream(base + "/aac-stream", "AAC", options, detail) == DispatchResult::Ok,
+        "AAC station accepted");
+  check(waitFor([&] {
+    rig.tick();
+    const radio::Status& status = rig.engine.state().runtime().radio;
+    return status.phase == radio::Phase::Playing && status.codec == "aac" && rig.helper.get(&FakeHelper::channels) == 2;
+  }, 5000), "the AAC station plays and says so");
+  const radio::Status& status = rig.engine.state().runtime().radio;
+  check(status.stationName == "Test AAC" && status.sampleRate == 44100 && status.channels == 2,
+        "its own name and format");
+  check(status.bitrateKbps > 30 && status.bitrateKbps < 200, "a bitrate");
+  rig.router.stop(sound::Stop::Radio);
+
+  check(rig.router.playStream(base + "/ogg-stream", "Ogg", detail) == DispatchResult::Ok, "Ogg station accepted");
+  check(waitFor([&] {
+    rig.tick();
+    const radio::Status& s = rig.engine.state().runtime().radio;
+    return s.phase == radio::Phase::Error && s.fault == radio::Fault::Codec && s.retryMs == -1;
+  }, 5000), "an Ogg station fails for good, naming the format");
+  check(rig.engine.state().runtime().radio.error == "ogg is not supported", "the reason reads well");
+  rig.router.stop(sound::Stop::Radio);
+}
+
+// Static alone takes the speaker while its level is above 0, and leaves it at 0.
+void test_sink_static_alone() {
+  Rig rig;
+  check(rig.router.setRadioStatic(50), "the TC002 has static");
+  check(rig.sink->radioStatic(), "and says so");
+  check(waitFor([&] { return rig.helper.get(&FakeHelper::received) > 8192 && rig.helper.get(&FakeHelper::channels) == 2; },
+                3000),
+        "static plays with no station");
+  check(rig.router.setRadioStatic(0), "static off");
+  check(waitFor([&] {
+    const uint32_t before = rig.helper.get(&FakeHelper::received);
+    std::this_thread::sleep_for(std::chrono::milliseconds(250));
+    return rig.helper.get(&FakeHelper::received) == before;
+  }, 4000), "and nothing more is sent");
+  check(!rig.sink->radioStatic(), "no static left");
 }
 
 // The voice assistant takes the speaker from a station, which plays again afterwards.
@@ -2142,6 +2219,8 @@ int main() {
   test_stream_playlists_and_wrapped_decode();
   test_stream_accepts_station_server_variants();
   test_stream_rejects_non_mp3_input();
+  test_sink_aac_station_and_status();
+  test_sink_static_alone();
   test_voice_keeps_the_station();
   test_a_repeating_alert_keeps_the_station_away();
   test_the_voice_holds_the_music();

@@ -110,7 +110,17 @@ When a station does not play, the answer says why:
     "underruns": 0,
     "decodeUs": 4180,
     "starvedMs": 0,
-    "bufferBytes": 12288
+    "bufferBytes": 12288,
+    "state": "playing",
+    "fault": null,
+    "httpStatus": 200,
+    "codec": "mp3",
+    "bitrate": 128,
+    "sampleRate": 44100,
+    "channels": 2,
+    "stationName": "SWR3",
+    "bufferPercent": 19,
+    "noise": false
   },
   "app": {"playing": false, "name": "", "error": ""},
   "alert": {"playing": false, "name": "", "error": ""},
@@ -119,6 +129,11 @@ When a station does not play, the answer says why:
 ```
 
 The same document is published (retained) on MQTT at `<prefix>/state/audio`.
+
+`state` says where the station is: `connecting`, `buffering`, `playing`, `error` or `stopped`. On an
+error, `fault` says why (`connect`, `timeout`, `tls`, `http` with `httpStatus`, `playlist`, `codec`,
+`undecodable`). `codec` names what the station sends once it plays.<!-- only esp32-s3 --> The
+ESP32 reports `idle` here and keeps to `playing` and `error`.<!-- /only -->
 
 `underruns` counts the dropouts you can hear. `starvedMs` is the time spent waiting for the station.
 If these two numbers grow while music plays, the stream does not arrive fast enough. Usually
@@ -202,14 +217,24 @@ off. If only some are set, the request is refused with `422`.
 
 ## Limits
 
+<!-- only tc002 -->
+- **MP3 and AAC.** MP3 at 8 to 48 kHz, mono or stereo, any bitrate, variable bitrate too; AAC,
+  AAC+ (HE-AAC) and HE-AAC v2 as ADTS, the way stations send them. The bytes decide, so a station
+  that calls its AAC `audio/mpeg` plays too. HLS, Ogg, Opus and FLAC do not play, and the error
+  names the format. AAC is decoded by the Fraunhofer FDK AAC library; the licence that comes with
+  it grants no patent rights.
+<!-- /only -->
+<!-- only esp32-s3 -->
 - **MP3 streams only.** Most internet radio is MP3. A station that sends AAC does not play, and the
   error says so. Supported: MP3 at 8 to 48 kHz, mono or stereo, any bitrate, variable bitrate too.
+<!-- /only -->
 - **One station at a time.** Starting a new station stops the one that is playing.
 - **Lost connection.** AWTRIX reconnects after two seconds. If that fails, it waits longer each
   time: two seconds, then five, then fifteen. It keeps trying every fifteen seconds while the
   station is unreachable. Stop the radio or pick another station to end the retries.
-- Each failed try sets `error` to `connect failed` and `playing` to `false`.<!-- only tc002 --> A
-  successful reconnect clears the error and sets `playing` back to `true`.<!-- /only -->
+- Each failed try sets `error` and `playing` to `false`<!-- only tc002 -->, `state` to `error` with
+  the reason in `fault`. A successful reconnect clears the error and sets `playing` back to
+  `true`<!-- /only -->.
 <!-- only tc002 -->
 - **HTTPS streams** work. The clock checks the station's certificate and host name. A
   certificate it does not trust stops the connection.
@@ -229,8 +254,16 @@ off. If only some are set, the request is refused with `422`.
 <!-- only tc002 -->
 | No Radio section, playing answers `503` | the speaker may not be available. Check the log |
 <!-- /only -->
+<!-- only tc002 -->
+| "ogg is not supported" (or opus, flac, hls, latm) | the station sends a format the radio does not play. Pick its MP3 or AAC stream |
+| "not playable MP3", "not playable AAC" | the stream is broken or not audio |
+| "HTTP 404" (or another status) | the station refuses the address; check the URL |
+| "no answer in time", "secure connection failed" | the station is slow or its certificate is not trusted |
+<!-- /only -->
+<!-- only esp32-s3 -->
 | "not playable MP3" | the station sends AAC or another format that is not MP3 |
-| "connect failed" | wrong URL, station offline, or name lookup failed<!-- only tc002 -->, or a certificate the clock does not trust<!-- /only --> |
+<!-- /only -->
+| "connect failed" | wrong URL, station offline, or name lookup failed |
 | Plays, but no title appears | the station sends no titles |
 <!-- only esp32-s3 -->
 | `503` with "not enough memory for TLS" | the clock is busy at that moment. Try again |

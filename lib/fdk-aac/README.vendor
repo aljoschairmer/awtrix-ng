@@ -1,0 +1,15 @@
+Fraunhofer FDK AAC Codec Library, the decoder only.
+
+Source:   https://github.com/mstorsjo/fdk-aac
+Commit:   c41c3c7516ea8d0d78a53b96b30bed3a29745cc6
+Licence:  NOTICE (Software License for The Fraunhofer FDK AAC Codec Library for Android),
+          also in LICENSES/FDK-AAC.txt
+
+Kept: the libraries the decoder links (libAACdec, libArithCoding, libDRCdec, libFDK,
+libMpegTPDec, libPCMutils, libSACdec, libSBRdec, libSYS): their headers and the sources the
+upstream CMakeLists.txt lists for the decoder (sources.txt). Left out: the encoders, xHE-AAC,
+the tools, the documentation and the build files. No file is changed.
+
+AWTRIX NG builds it as the static library awtrix_fdkaac (cmake/FdkAac.cmake) and decodes radio
+streams with it (src/core/radio/stream/AacDecoder.cpp). Patents: the licence grants none; see
+docs/guides/radio.md.

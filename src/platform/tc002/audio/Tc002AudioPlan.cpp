@@ -21,6 +21,8 @@ Tc002AudioPlayer::Tap Tc002AudioSink::analysisTap() {
       SystemStart pending = SystemStart::Pending;
       systemStart_.compare_exchange_strong(pending, SystemStart::Audible);
     }
+    // Static the radio makes up while it waits is not music to analyse.
+    if (playing_ == Playing::Stream && stream_ && stream_->synthetic()) return;
     audio::FrameStats stats;
     if (stats_.wanted(now) &&
         analyzer_.analyze(samples, static_cast<int>(frames), channels, static_cast<int>(rate), stats))
@@ -30,7 +32,10 @@ Tc002AudioPlayer::Tap Tc002AudioSink::analysisTap() {
 }
 
 void Tc002AudioSink::startStream(const Request& request, int64_t nowMs) {
-  std::unique_ptr<StreamSource> source(new StreamSource(*request.url));
+  staticOnly_ = !request.streamWanted || !request.url;
+  radio::StreamOptions options = request.streamOptions;
+  options.staticLevel = request.staticLevel;
+  std::unique_ptr<StreamSource> source(new StreamSource(staticOnly_ ? std::string() : *request.url, options));
   stream_ = source.get();
   player_.play(std::move(source), request.volumes.radio, nowMs, analysisTap());
   playing_ = Playing::Stream;
@@ -106,6 +111,8 @@ void Tc002AudioSink::reconcile(int64_t nowMs) {
     request.streamWanted = request_.streamWanted;
     request.streamHeld = request_.streamHeld;
     request.url = request_.url;
+    request.streamOptions = request_.streamOptions;
+    request.staticLevel = request_.staticLevel;
     request.volumes = request_.volumes;
   }
 
@@ -170,8 +177,10 @@ void Tc002AudioSink::reconcile(int64_t nowMs) {
     effectVoices_.store(mixer_ ? static_cast<uint32_t>(mixer_->voices()) : 0);
   }
 
-  // A one-shot that repeats keeps the station away between its plays.
-  if (streamChanged || musicWaits) {
+  // A one-shot that repeats keeps the station away between its plays. Static alone ends when its
+  // level goes to 0.
+  const bool staticEnded = playing_ == Playing::Stream && staticOnly_ && request.staticLevel == 0;
+  if (streamChanged || musicWaits || staticEnded) {
     playingStreamSeq_ = request.streamSeq;
     if (playing_ == Playing::Stream) {
       player_.stop();
@@ -179,7 +188,9 @@ void Tc002AudioSink::reconcile(int64_t nowMs) {
       playing_ = Playing::None;
     }
   }
-  if (playing_ == Playing::None && request.streamWanted && !musicWaits && !request.streamHeld)
+  if (playing_ == Playing::Stream && stream_) stream_->setStatic(request.staticLevel);
+  if (playing_ == Playing::None && (request.streamWanted || request.staticLevel > 0) && !musicWaits &&
+      !request.streamHeld)
     startStream(request, nowMs);
   applyVolumes(request);
 }

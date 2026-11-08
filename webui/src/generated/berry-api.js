@@ -8,7 +8,7 @@ const BERRY_API=["bar_chart(list, paint?, autoscale?, x0?)","circle(cx, cy, r, c
 const BERRY_MODS=["display","http","mqtt","music","re","rotation","sensor","settings","shared","sound","store","timer"];
 const BERRY_CORE=["assert","bool","call","classname","classof","compile","format","gc","global","input","int","isinstance","issubclass","json","math","module","number","print","real","size","str","strict","string","super","type","modbus"];
 //linux:begin
-BERRY_API.push(...["layout.draw(handle)","layout.prepare(spec)","layout.release(handle)","layout.update(handle, spec)","music.pitch()","sound.beat()","sound.effect(x)"]);
+BERRY_API.push(...["layout.draw(handle)","layout.prepare(spec)","layout.release(handle)","layout.update(handle, spec)","music.pitch()","radio.can(key?)","radio.noise(level)","radio.on_change(fn)","radio.play(url, opts?)","radio.state()","radio.stop()","sound.beat()","sound.effect(x)"]);
 BERRY_MODS.push(...["layout"]);
 //linux:end
 /* BERRY-API-END */

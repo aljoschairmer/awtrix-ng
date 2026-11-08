@@ -36,7 +36,9 @@ enum class CommandType : uint8_t {
   ScriptUpdate,
   ScriptDataSet,
   BuiltinAppConfigSet,
-  SetAppEnabled
+  SetAppEnabled,
+  // arg is the radio static's level, 0..100.
+  RadioStatic
 };
 
 enum class Source : uint8_t { Mqtt = 0, Http = 1, Menu = 2, Internal = 3 };

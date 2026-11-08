@@ -6,6 +6,7 @@
 #include "core/Command.h"
 #include "core/audio/AudioStats.h"
 #include "core/audio/AnalysisSource.h"
+#include "core/radio/RadioStatus.h"
 #include "core/sound/PcmPlayback.h"
 
 namespace awtrix {
@@ -70,7 +71,16 @@ class IPcmSink : public audio::IAnalysisSource {
 
   virtual DispatchResult playStream(const std::string& url, const std::string& label,
                                     DispatchDetail& detail) = 0;
+  // A station with radio.play()'s options; an output without them plays it plainly.
+  virtual DispatchResult playStreamWith(const std::string& url, const std::string& label,
+                                        const radio::StreamOptions& options, DispatchDetail& detail) {
+    (void)options;
+    return playStream(url, label, detail);
+  }
   virtual void stopStream() = 0;
+  // Radio static at level 0..100 under the radio volume: under a station's wait, or alone.
+  virtual void setRadioStatic(uint8_t level) { (void)level; }
+  virtual bool radioStatic() const { return false; }
   // While held, a station that gave way to a one-shot does not come back: the one-shot repeats
   // and would cut it off again at once.
   virtual void holdStream(bool held) = 0;

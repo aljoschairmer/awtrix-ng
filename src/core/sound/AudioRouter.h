@@ -41,6 +41,12 @@ class AudioRouter final {
   void adoptPcm(const Spec& spec);
   DispatchResult playStream(const std::string& url, const std::string& label,
                             DispatchDetail& detail);
+  DispatchResult playStream(const std::string& url, const std::string& label,
+                            const radio::StreamOptions& options, DispatchDetail& detail);
+  // Radio static alone or under a station's wait; false where the output has none.
+  bool setRadioStatic(uint8_t level);
+  // Whether static is set to play (alone or under a station).
+  bool radioNoise() const { return pcm_ && pcm_->radioStatic(); }
   void stop(Stop what, const std::string& script = std::string());
   // Called before sound files are deleted or replaced. See IPcmSink::release.
   void release(const std::string& path);

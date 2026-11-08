@@ -66,7 +66,7 @@ int EngineScriptApplication::soundCaps() {
   const sound::Caps c = audio_.caps();
   return (c.mp3 ? 1 : 0) | (c.rtttl ? 2 : 0) | (c.song ? 4 : 0) | (c.speech ? 8 : 0) |
          (c.track ? 16 : 0) | (c.radio ? 32 : 0) | (c.url ? 64 : 0) | (c.effect ? 128 : 0) |
-         (c.clip ? 256 : 0);
+         (c.clip ? 256 : 0) | (c.radioAac ? 512 : 0) | (c.radioStatic ? 1024 : 0);
 }
 
 void EngineScriptApplication::rotateNext() {
