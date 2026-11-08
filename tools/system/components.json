@@ -606,13 +606,13 @@
       "origin": {
         "url": "https://github.com/mstorsjo/fdk-aac",
         "reference": "c41c3c7516ea8d0d78a53b96b30bed3a29745cc6",
-        "note": "the decoder part only: libAACdec, libArithCoding, libDRCdec, libFDK, libMpegTPDec, libPCMutils, libSACdec, libSBRdec and libSYS with the sources the upstream CMakeLists.txt names for the decoder (lib/fdk-aac/sources.txt); encoders, xHE-AAC, tools and build files left out; release 2.0.3 is the last decoder release, the commit adds only the separate xHE-AAC encoder"
+        "note": "the decoder part only: libAACdec, libArithCoding, libDRCdec, libFDK, libMpegTPDec, libPCMutils, libSACdec, libSBRdec and libSYS with the sources the upstream CMakeLists.txt names for the decoder (lib/fdk-aac/sources.txt) and the ARM and MIPS sources they include; encoders, xHE-AAC, tools and build files left out; release 2.0.3 is the last decoder release, the commit adds only the separate xHE-AAC encoder"
       },
       "vendored": true,
       "paths": [
         "lib/fdk-aac"
       ],
-      "files_sha256": "20891221867f1eef888f32aeee4c0afb9c61bc6dfce05435285c8b31e14297d0",
+      "files_sha256": "2c0bb257744c90e877edaffae1c74ee9d1e38127b32a41a23496da5c503a69a9",
       "patches": [],
       "license": {
         "spdx": "FDK-AAC",
