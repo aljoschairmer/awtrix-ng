@@ -117,6 +117,7 @@ the native tests. They are not present in the ESP32 firmware images.
 | Component | Location | License | Text | Copyright |
 |---|---|---|---|---|
 | [cpp-httplib](https://github.com/yhirose/cpp-httplib) | `src/platform/linux/host/vendor/httplib.h` | MIT | [MIT-cpp-httplib.txt](LICENSES/MIT-cpp-httplib.txt) | (c) 2025 Yuji Hirose |
+| [Fraunhofer FDK AAC Codec Library for Android](https://github.com/mstorsjo/fdk-aac) 2.0.3, the decoder | `lib/fdk-aac` | Software License for The Fraunhofer FDK AAC Codec Library for Android | [FDK-AAC.txt](LICENSES/FDK-AAC.txt) | © 1995–2018 Fraunhofer-Gesellschaft zur Förderung der angewandten Forschung e.V. |
 | [TensorFlow Lite Micro](https://github.com/tensorflow/tflite-micro) microfrontend and [TensorFlow Lite](https://github.com/tensorflow/tensorflow) reference kernels, ported | `src/platform/tc002/wake/WakeFrontend.cpp`, `WakeFrontendTables.h`, `WakeKernels.cpp`, `WakeLoader.cpp`, `WakeOperators.cpp` | Apache-2.0 | [Apache-2.0.txt](LICENSES/Apache-2.0.txt) | Copyright The TensorFlow Authors |
 | [KISS FFT](https://github.com/mborgerding/kissfft) 1.3.0, 16-bit real FFT, ported | `src/platform/tc002/wake/WakeFft.cpp` | BSD-3-Clause | [BSD-3-Clause-KISS-FFT.txt](LICENSES/BSD-3-Clause-KISS-FFT.txt) | Copyright (c) 2003-2010 Mark Borgerding |
 | [microWakeWord voice activity model](https://github.com/esphome/micro-wake-word-models) v2 (`vad.tflite`, `vad.json`) | `assets/tc002/vad/` | Apache-2.0 | [Apache-2.0.txt](LICENSES/Apache-2.0.txt), [NOTICE](assets/tc002/vad/NOTICE) | Copyright 2024-2026 Open Home Foundation |
@@ -143,6 +144,10 @@ write. It parses status lines and redirect locations without regular
 expressions, and its server matches a `.*` route without one.
 The local patches are recorded in `tools/system/components.json`; the original
 MIT notice is retained.
+
+**The FDK AAC decoder** decodes AAC radio stations on the TC002 and in the Linux application. It is
+unchanged; the complete source is in `lib/fdk-aac` (see its `README.vendor`). Its licence grants no
+patent rights: AAC is covered by patents that are licensed separately (see the licence text).
 
 Berry, PubSubClient, base64, the panel fonts and TJpgDec are also used by the
 shared host application; their notices above apply there too. No TC002 vendor

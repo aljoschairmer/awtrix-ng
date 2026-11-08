@@ -1,7 +1,7 @@
 # Source content is pinned by the runner's Git revision and snapshot digest.
 # License hashes use Git blob bytes (LF), as exported by git archive.
 sha256  9a4e63f7b180a7896ef20b5d66ef996558c20f1c7e6c45e63420debdf6bdbd91  LICENSE.md
-sha256  16aeb4f793f35ca027bcb04daa2dd60677ca421e4c76a58bb4ad2e57d4075064  THIRD-PARTY-NOTICES.md
+sha256  8780ce97db545e4f0483fea75de7b4baffa8a6fbdbfaf4ad421eb864b2eb1fdc  THIRD-PARTY-NOTICES.md
 sha256  ee13cc1b190b67260dcebd4ac32dc4ce3043ab1f4a673b13d92c3d57d7369add  LICENSES/MIT-Berry.txt
 sha256  4b45cbe16d7b71b89ae6127e26e0d90a029198ca5e958ad8e3d0b8bbed364d8b  LICENSES/MIT-cpp-httplib.txt
 sha256  7db5ddbfb3c4b6bc390f9406d4129a38094af37faaf16ed53666c379e51e596b  LICENSES/MIT-Matrix-Fonts.txt
@@ -11,3 +11,4 @@ sha256  dce584239dbb753c429f0caf7f536096c73cb06e0a6222fc9c4d15c51d236b48  LICENS
 sha256  42aaf97e99bbc06d9158c45d82dfc28ef37b4ccec8dc2614f8414b76a7b56e05  LICENSES/CMUdict-SCOWL.txt
 sha256  cfc7749b96f63bd31c3c42b5c471bf756814053e847c10f3eb003417bc523d30  LICENSES/Apache-2.0.txt
 sha256  ddd1400f963747b305bfa39e21206e58805a1c650451e2ee5ce81ed86bc0b1ab  LICENSES/BSD-3-Clause-KISS-FFT.txt
+sha256  95ec80da40b4af12ad4c4f3158c9cfb80f2479f3246e4260cb600827cc8c7836  LICENSES/FDK-AAC.txt
