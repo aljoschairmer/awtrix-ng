@@ -6,8 +6,9 @@ Licence:  NOTICE (Software License for The Fraunhofer FDK AAC Codec Library for 
           also in LICENSES/FDK-AAC.txt
 
 Kept: the libraries the decoder links (libAACdec, libArithCoding, libDRCdec, libFDK,
-libMpegTPDec, libPCMutils, libSACdec, libSBRdec, libSYS): their headers and the sources the
-upstream CMakeLists.txt lists for the decoder (sources.txt). Left out: the encoders, xHE-AAC,
+libMpegTPDec, libPCMutils, libSACdec, libSBRdec, libSYS): their headers, the sources the
+upstream CMakeLists.txt lists for the decoder (sources.txt), and the ARM and MIPS sources
+those include on their targets (libAACdec/src/arm, libFDK/src/arm, libFDK/src/mips). Left out: the encoders, xHE-AAC,
 the tools, the documentation and the build files. No file is changed.
 
 AWTRIX NG builds it as the static library awtrix_fdkaac (cmake/FdkAac.cmake) and decodes radio
