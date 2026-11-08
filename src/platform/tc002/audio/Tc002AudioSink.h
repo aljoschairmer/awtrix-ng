@@ -69,7 +69,11 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
   bool sharesPcmOutput() const override { return true; }
 
   sound::PcmPlay playSpec(const sound::PcmRequest& request, DispatchDetail& detail) override;
-  sound::Caps caps() const override { return sound::PcmRouting::caps(*this); }
+  sound::Caps caps() const override {
+    sound::Caps result = sound::PcmRouting::caps(*this);
+    result.radioAac = result.radioStatic = true;
+    return result;
+  }
   bool checkSpec(const sound::Spec& spec, DispatchDetail& detail) override;
   void stopLayers(sound::Stop what, const std::string& owner) override;
   sound::PcmState state() override;
@@ -110,7 +114,11 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
   void release(const std::string& path) override;
   DispatchResult playStream(const std::string& url, const std::string& label,
                             DispatchDetail& detail) override;
+  DispatchResult playStreamWith(const std::string& url, const std::string& label,
+                                const radio::StreamOptions& options, DispatchDetail& detail) override;
   void stopStream() override;
+  void setRadioStatic(uint8_t level) override;
+  bool radioStatic() const override;
   void holdStream(bool held) override;
   void tick(int64_t nowMs) override;
   bool analysis(int64_t nowMs, audio::FrameStats& out) override;
@@ -181,6 +189,9 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
     bool streamWanted = false;
     bool streamHeld = false;
     std::shared_ptr<const std::string> url;
+    radio::StreamOptions streamOptions;
+    // Static alone plays while this is above 0 and no station is wanted.
+    uint8_t staticLevel = 0;
     sound::Volumes volumes;
   };
 
@@ -192,6 +203,8 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
     bool titleNew = false;
     bool errorNew = false;
     bool streaming = false;
+    radio::Status status;
+    bool statusNew = false;
   };
 
   void run();
@@ -211,6 +224,7 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
   void finishOneShot(uint32_t seq);
   void publishError(const std::string& message);
   void publishTitle(const std::string& title);
+  void publishStatus(const radio::Status& status);
   void markSong(int64_t audibleAtMs);
   void systemGone(uint32_t seq);
   Tc002AudioPlayer::Tap analysisTap();
@@ -239,6 +253,7 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
   std::atomic<uint32_t> decodeUs_{0};
   std::atomic<uint32_t> starvedMs_{0};
   std::atomic<uint32_t> bufferBytes_{0};
+  std::atomic<uint8_t> bufferPercent_{0};
   std::atomic<uint32_t> effectVoices_{0};
   std::atomic<uint32_t> systemSeq_{0};
   std::atomic<SystemStart> systemStart_{SystemStart::None};
@@ -264,6 +279,8 @@ class Tc002AudioSink final : public sound::IToneSink, public sound::IPcmSink {
   uint32_t playingLoopSeq_ = 0;
   bool loopHeld_ = false;
   uint32_t playingStreamSeq_ = 0;
+  // The stream playing is static alone, with no station.
+  bool staticOnly_ = false;
   StreamSource* stream_ = nullptr;
   MixSource* mixer_ = nullptr;
   EffectCache effectCache_;

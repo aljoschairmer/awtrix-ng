@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdlib>
 #include <string>
 
 #include "core/Command.h"
@@ -30,6 +31,14 @@ inline Command scriptSoundCommand(script::SoundAction action, const std::string&
     case script::SoundAction::StopMusic:
       c.type = CommandType::StopAudio;
       c.arg = static_cast<int>(sound::Stop::ScriptMusic);
+      break;
+    case script::SoundAction::StopRadio:
+      c.type = CommandType::StopAudio;
+      c.arg = static_cast<int>(sound::Stop::Radio);
+      break;
+    case script::SoundAction::RadioStatic:
+      c.type = CommandType::RadioStatic;
+      c.arg = std::atoi(json.c_str());
       break;
   }
   return c;

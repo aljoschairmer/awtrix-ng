@@ -18,6 +18,9 @@ struct Caps {
   bool url = false;
   bool effect = false;
   bool clip = false;
+  // The radio decodes AAC as well as MP3, and can play static (radio.can()).
+  bool radioAac = false;
+  bool radioStatic = false;
 };
 
 // The router resolves stored files and decides whether an alert permits a new one-shot.

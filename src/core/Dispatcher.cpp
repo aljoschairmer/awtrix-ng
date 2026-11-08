@@ -14,6 +14,7 @@
 #include "core/render/Color.h"
 #include "core/sound/SoundMp3.h"
 #include "core/sound/SoundSpec.h"
+#include "system/MonotonicClock.h"
 
 namespace awtrix {
 
@@ -205,7 +206,7 @@ DispatchResult applyRadioPlay(const sound::Spec& spec, CommandContext& ctx) {
     url = ctx.stations->stationUrl(label);
   } else if (sound::isUrl(spec.text)) {
     url = spec.text;
-    label = spec.text;
+    label = spec.label.empty() ? spec.text : spec.label;
   } else {
     url = ctx.stations->stationUrl(spec.text);
     if (url.empty()) {
@@ -214,7 +215,11 @@ DispatchResult applyRadioPlay(const sound::Spec& spec, CommandContext& ctx) {
     }
     label = spec.text;
   }
-  const DispatchResult result = ctx.audio.playStream(url, label, ctx.detail);
+  radio::StreamOptions options;
+  options.id = spec.id;
+  if (spec.fadeMs >= 0) options.fadeMs = static_cast<uint32_t>(spec.fadeMs);
+  if (spec.staticLevel >= 0) options.staticLevel = static_cast<uint8_t>(spec.staticLevel);
+  const DispatchResult result = ctx.audio.playStream(url, label, options, ctx.detail);
   if (!ctx.detail.field.empty()) ctx.detail.field = "station";
   if (result == DispatchResult::Ok) {
     RuntimeState& runtime = ctx.state.runtime();
@@ -222,6 +227,11 @@ DispatchResult applyRadioPlay(const sound::Spec& spec, CommandContext& ctx) {
     runtime.radioStation = label;
     runtime.radioTitle.clear();
     runtime.radioError.clear();
+    runtime.radioId = spec.id;
+    const uint8_t buffer = runtime.radio.bufferPercent;
+    runtime.radio = radio::Status{};
+    runtime.radio.enter(radio::Phase::Connecting, monotonicMs());
+    runtime.radio.bufferPercent = buffer;
     ctx.state.emit(StateEvent::AudioChanged);
   }
   return result;
@@ -312,12 +322,24 @@ DispatchResult Dispatcher::dispatch(Command& cmd, CommandContext& ctx) {
       const sound::Stop what = static_cast<sound::Stop>(cmd.arg);
       ctx.audio.stop(what, cmd.name);
       if (what == sound::Stop::All || what == sound::Stop::Radio) {
-        ctx.state.runtime().radioPlaying = false;
-        ctx.state.runtime().radioTitle.clear();
+        RuntimeState& runtime = ctx.state.runtime();
+        runtime.radioPlaying = false;
+        runtime.radioTitle.clear();
+        if (runtime.radio.phase != radio::Phase::Idle) runtime.radio.enter(radio::Phase::Stopped, monotonicMs());
         ctx.state.emit(StateEvent::AudioChanged);
       }
       return DispatchResult::Ok;
     }
+    case CommandType::RadioStatic:
+      if (cmd.arg < 0 || cmd.arg > 100) {
+        ctx.detail = {"noise", "must be 0..100"};
+        return DispatchResult::ValidationError;
+      }
+      if (!ctx.audio.setRadioStatic(static_cast<uint8_t>(cmd.arg))) {
+        ctx.detail = {"", "no radio static on this output"};
+        return DispatchResult::Unavailable;
+      }
+      return DispatchResult::Ok;
     case CommandType::ScriptSet:
       if (!ctx.scripts) {
         ctx.detail = {"", "scripting is off"};

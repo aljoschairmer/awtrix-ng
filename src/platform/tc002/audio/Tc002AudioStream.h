@@ -4,10 +4,10 @@
 #include <cstdint>
 #include <memory>
 #include <string>
-#include <vector>
 
-#include "core/audio/Mp3Decoder.h"
+#include "core/radio/RadioStatus.h"
 #include "core/radio/StreamPolicy.h"
+#include "core/radio/stream/StreamDecoder.h"
 #include "platform/tc002/audio/Tc002AudioSources.h"
 
 namespace awtrix {
@@ -15,14 +15,13 @@ namespace tc002 {
 
 // An internet radio station. A detached network thread fills a compressed ring (it may sit in a
 // connect or DNS lookup for seconds, so dropping the source never waits for it); the audio
-// thread decodes from the ring on demand. Reconnects with the ESP32's back-off.
+// thread decodes from the ring on demand (radio::StreamDecoder: MP3 or AAC, the fade-in, the
+// static). Reconnects with the ESP32's back-off. An empty url is a source of static alone.
 class StreamSource final : public PcmSource {
  public:
   static constexpr std::size_t kRingBytes = radio::kInputBufferBytes;
-  static constexpr std::size_t kPrerollBytes = radio::kPrerollBytes;
-  static constexpr std::size_t kUndecodableAfterBytes = radio::kUndecodableAfterBytes;
 
-  explicit StreamSource(const std::string& url);
+  explicit StreamSource(const std::string& url, const radio::StreamOptions& options = {});
   ~StreamSource() override;
   StreamSource(const StreamSource&) = delete;
   StreamSource& operator=(const StreamSource&) = delete;
@@ -34,10 +33,16 @@ class StreamSource final : public PcmSource {
 
   bool takeTitle(std::string& out);
   bool takeError(std::string& out);
+  // The status when it changed in more than its buffer level since the last call.
+  bool takeStatus(radio::Status& out);
   bool connected() const;
+  // The radio static under the wait, 0..100; also for a station already playing.
+  void setStatic(uint8_t level);
+  // Whether the last block was static the decoder made up.
+  bool synthetic() const { return synthetic_; }
   uint32_t bufferBytes() const { return buffered_; }
-  uint32_t starvedMs() const { return starvedMs_; }
-  uint32_t decodeUs() const { return decodeUs_; }
+  uint32_t starvedMs() const { return decoder_.starvedMs(); }
+  uint32_t decodeUs() const { return decoder_.decodeUs(); }
 
   // Network threads outlive their source until their blocking call returns; shutdown waits here.
   static bool waitForNetworkThreads(int timeoutMs);
@@ -45,20 +50,17 @@ class StreamSource final : public PcmSource {
   struct Shared;
 
  private:
+  void updateStatus(radio::StreamDecoder::Step step, int64_t nowMs);
+
   std::shared_ptr<Shared> shared_;
-  std::unique_ptr<mp3::Decoder> decoder_;
-  std::size_t bytesSeen_ = 0;
+  radio::StreamDecoder decoder_;
+  bool staticOnly_ = false;
   uint32_t seenConnection_ = 0;
   uint32_t buffered_ = 0;
-  bool prerolled_ = false;
-  bool decodedAnything_ = false;
   bool fatal_ = false;
-  std::vector<int16_t> pcm_;
+  bool synthetic_ = false;
   uint32_t rate_ = 0;
   uint8_t channels_ = 0;
-  int64_t starvedSinceMs_ = -1;
-  uint32_t starvedMs_ = 0;
-  uint32_t decodeUs_ = 0;
 };
 
 }
