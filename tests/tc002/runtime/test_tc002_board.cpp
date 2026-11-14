@@ -154,6 +154,9 @@ void brightnessAndGrade() {
   canvas.clear(0xFFFFFFu);
   board.show(canvas);
   require(black(state->frames.back()), "nothing lights before the runtime sets a brightness");
+  // The panel's lowest lit code: dimming keeps white at least there.
+  int floorCode = 1;
+  while (awtrix::Tc002Board::kPanelLight[floorCode] == 0) ++floorCode;
   int previous = 0;
   for (int requested = 0; requested <= 255; ++requested) {
     board.setBrightness(static_cast<uint8_t>(requested));
@@ -162,7 +165,7 @@ void brightnessAndGrade() {
     const int code = frame[0];
     require(frame[1] == code && frame[2] == code, "white keeps its channels equal");
     const int nearest = nearestCode(65535L * requested / 255);
-    require(code == (requested == 0 ? 0 : std::max(nearest, 50)),
+    require(code == (requested == 0 ? 0 : std::max(nearest, floorCode)),
             "white becomes the nearest measured level and dimming never turns it off");
     require(code >= previous, "panel codes never fall as brightness rises");
     previous = code;
