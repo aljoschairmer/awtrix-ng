@@ -153,6 +153,17 @@ void test_parses_an_http_response_head() {
   TEST_ASSERT_EQUAL_STRING("Example FM", head.stationName.c_str());
 }
 
+// Many stations send their name in Latin-1; it reaches the status, and its JSON, as UTF-8.
+void test_reads_a_latin1_station_name_as_utf8() {
+  radio::ResponseHead head;
+  TEST_ASSERT_TRUE(radio::parseResponseHead(
+      "HTTP/1.0 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Radio Espa\xf1""a\r\n\r\n", head));
+  TEST_ASSERT_EQUAL_STRING("Radio Espa\xc3\xb1""a", head.stationName.c_str());
+  TEST_ASSERT_TRUE(radio::parseResponseHead(
+      "HTTP/1.0 200 OK\r\nicy-name: Radio Espa\xc3\xb1""a\r\n\r\n", head));
+  TEST_ASSERT_EQUAL_STRING("Radio Espa\xc3\xb1""a", head.stationName.c_str());
+}
+
 void test_accepts_the_shoutcast_status_line() {
   radio::ResponseHead head;
   TEST_ASSERT_TRUE(radio::parseResponseHead("ICY 200 OK\r\nicy-metaint:8192\r\n\r\n", head));
@@ -480,6 +491,7 @@ int main(int, char**) {
   RUN_TEST(test_rejects_unusable_urls);
   RUN_TEST(test_resolves_redirects);
   RUN_TEST(test_parses_an_http_response_head);
+  RUN_TEST(test_reads_a_latin1_station_name_as_utf8);
   RUN_TEST(test_accepts_the_shoutcast_status_line);
   RUN_TEST(test_reads_redirects_and_errors);
   RUN_TEST(test_request_asks_for_metadata);

@@ -13,6 +13,7 @@
 #include "core/radio/IcyStream.h"
 #include "core/radio/PlaylistParser.h"
 #include "core/radio/StationUrl.h"
+#include "core/render/TextEncoding.h"
 #include "platform/linux/host/vendor/httplib.h"
 #include "platform/linux/net/HttpClient.h"
 #include "system/MonotonicClock.h"
@@ -103,7 +104,8 @@ void beginConnection(Shared& shared, const std::string& type, const std::string&
   radio::Status status = shared.status;
   status.enter(radio::Phase::Buffering, monotonicMs());
   status.httpStatus = httpStatus;
-  status.stationName = icyName;
+  // Many stations send their name in Latin-1; the status (and its JSON) holds UTF-8.
+  status.stationName = text::fromStreamBytes(icyName);
   if (icyBr > 0 && icyBr < 1000) status.bitrateKbps = static_cast<uint32_t>(icyBr);
   setStatus(shared, status);
   shared.changed.notify_all();

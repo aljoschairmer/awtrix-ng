@@ -1652,7 +1652,8 @@ struct IcyServer {
     } else if (request.rfind("GET /aac-stream", 0) == 0) {
       // An AAC+ station that calls itself audio/mpeg: the bytes decide.
       ++streams;
-      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Test AAC\r\n"
+      // Its icy-name in Latin-1, as many stations send it ("Test AAC España").
+      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/mpeg\r\nicy-name: Test AAC Espa\xf1""a\r\n"
                                "icy-br: 96\r\n\r\n";
       const auto& v = aacvectors::kAacVectors[0];
       bool okay = write(fd, head.data(), head.size());
@@ -1919,7 +1920,7 @@ void test_sink_aac_station_and_status() {
     return status.phase == radio::Phase::Playing && status.codec == "aac" && rig.helper.get(&FakeHelper::channels) == 2;
   }, 5000), "the AAC station plays and says so");
   const radio::Status& status = rig.engine.state().runtime().radio;
-  check(status.stationName == "Test AAC" && status.sampleRate == 44100 && status.channels == 2,
+  check(status.stationName == "Test AAC Espa\xc3\xb1""a" && status.sampleRate == 44100 && status.channels == 2,
         "its own name and format");
   check(status.bitrateKbps > 30 && status.bitrateKbps < 200, "a bitrate");
   rig.router.stop(sound::Stop::Radio);
