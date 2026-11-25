@@ -143,10 +143,12 @@ StreamDecoder::Step StreamDecoder::next(audio::StreamInputBuffer& input, int64_t
     shape(out);
     return Step::Data;
   }
-  // Nothing to decode in this many bytes (or a full ring of bytes no codec claims) will not
-  // become playable by waiting longer.
-  if (prerolled_ && !decodedAnything_ &&
-      std::max<std::size_t>(bytesSeen_, input.size()) > kUndecodableAfterBytes) {
+  // Nothing to decode in this many bytes the decoder went through (or a full ring of bytes no codec
+  // claims) will not become playable by waiting longer. A full ring of a known codec is not such a
+  // sign: joined mid-stream, the first MP3 frames have nothing to play yet, their main data was sent
+  // before the clock came in.
+  const bool unclaimed = codec_ == Codec::Unknown && input.size() > kUndecodableAfterBytes;
+  if (prerolled_ && !decodedAnything_ && (bytesSeen_ > kUndecodableAfterBytes || unclaimed)) {
     if (codec_ == Codec::Unknown && !unsupported_.empty()) {
       fault_ = Fault::Codec;
       error_ = unsupported_ + " is not supported";
