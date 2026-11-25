@@ -1650,9 +1650,10 @@ struct IcyServer {
       write(fd, head.data(), head.size());
       write(fd, body.data(), body.size());
     } else if (request.rfind("GET /named-stream", 0) == 0) {
-      // An MP3 station that calls itself AAC+ and names itself: the bytes decide.
+      // An MP3 station that calls itself AAC+ and names itself: the bytes decide. Its icy-name is in
+      // Latin-1, as many stations send it ("Test MP3 España").
       ++streams;
-      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/aacp\r\nicy-name: Test MP3\r\n"
+      const std::string head = "HTTP/1.1 200 OK\r\nContent-Type: audio/aacp\r\nicy-name: Test MP3 Espa\xf1""a\r\n"
                                "icy-br: 128\r\n\r\n";
       bool okay = write(fd, head.data(), head.size());
       while (okay && running) okay = write(fd, ksine_stereo_128k_mp3, sizeof ksine_stereo_128k_mp3);
@@ -1927,7 +1928,7 @@ void test_sink_station_status_and_refused_formats() {
     return status.phase == radio::Phase::Playing && status.codec == "mp3" && rig.helper.get(&FakeHelper::channels) == 2;
   }, 5000), "the MP3 station plays and says so");
   const radio::Status& status = rig.engine.state().runtime().radio;
-  check(status.stationName == "Test MP3" && status.sampleRate == 44100 && status.channels == 2,
+  check(status.stationName == "Test MP3 Espa\xc3\xb1""a" && status.sampleRate == 44100 && status.channels == 2,
         "its own name and format");
   check(status.bitrateKbps > 30 && status.bitrateKbps < 200, "a bitrate");
   rig.router.stop(sound::Stop::Radio);
