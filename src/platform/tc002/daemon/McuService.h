@@ -1,6 +1,8 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
+#include <deque>
 #include <functional>
 #include <string>
 
@@ -56,6 +58,8 @@ class McuService : public Service {
 
   void appendStatus(api::JsonWriter& json, int64_t nowMs) const;
   static int batteryMillivolts(uint16_t word);
+  // The display load the runtime reports; the gauge gets it only while it is steady (LoadTracker).
+  void setPanelLoad(int perMille, int64_t nowMs);
 
   bool open() const { return uart_.valid(); }
   const std::string& version() const { return version_; }
@@ -69,6 +73,23 @@ class McuService : public Service {
   bool streamAvailable() const;
   bool startStream(int epoch, mcu::Stream::Consumer consumer, int64_t nowMs);
   void controlStream(int epoch, bool stop, int64_t nowMs);
+
+  // The LED driver registers of the stock MCU firmware (McuFrame.h), for bench work over the
+  // control socket. Requests queue and run between the power queries, never during a capture,
+  // stream or firmware transfer. With MCU build 14 (driverTableAvailable) reads and writes use the
+  // table commands 0x0a and 0x09, which neither save nor meet the stock override; restore clears the
+  // override and writes every register's factory value. On the stock commands alone a write becomes
+  // the MCU's saved override (McuFrame.h), and restore writes the factory value of every register
+  // known to differ, the override included, so the override left behind is a factory value. Each
+  // returns an empty string when queued, otherwise why not.
+  bool driverRegistersAvailable() const;
+  bool driverTableAvailable() const;
+  std::string clearDriverOverride();
+  std::string readDriverRegister(uint8_t reg);
+  std::string readDriverRegisters();
+  std::string writeDriverRegister(uint8_t reg, const uint8_t (&values)[3]);
+  std::string restoreDriverRegisters();
+  void appendDriverRegisters(api::JsonWriter& json) const;
 
  private:
   bool openUart(int64_t nowMs);
@@ -86,6 +107,28 @@ class McuService : public Service {
   void finishStream(int64_t nowMs);
   void cancelPendingStream(const char* reason, int64_t nowMs);
   bool writeFrame(const uint8_t* bytes, std::size_t length, uint8_t command, int64_t nowMs);
+  bool sendDriverJob(int64_t nowMs);
+  void driverReply(const mcu::Frame& frame);
+
+  struct DriverRegister {
+    bool known = false;  // value came from a read or a write in this run
+    uint8_t value[3]{};
+  };
+  enum class DriverOp : uint8_t { Read, Write, Clear };
+  struct DriverJob {
+    DriverOp op = DriverOp::Read;
+    uint8_t reg = 0;
+    uint8_t values[3]{};
+  };
+  void driverFailed(const std::string& why);
+  static constexpr std::size_t kDriverQueue = 64;
+  std::array<DriverRegister, mcu::kDriverLastRegister - mcu::kDriverFirstRegister + 1> driver_{};
+  std::deque<DriverJob> driverJobs_;
+  DriverJob driverSent_;
+  uint64_t driverReads_ = 0, driverWrites_ = 0, driverFailures_ = 0, overrideAnswers_ = 0;
+  bool overrideKnown_ = false;
+  uint8_t overrideRegister_ = 0, overrideValue_[3]{};
+  std::string driverError_;
 
   DeviceState& state_;
   McuOptions options_;
@@ -135,6 +178,7 @@ class McuService : public Service {
   uint16_t batteryWord_ = 0;
   int64_t usbSeenAt_ = 0, batterySeenAt_ = 0;
   BatteryGauge gauge_;
+  LoadTracker panelLoad_;
 
   uint64_t rxBytes_ = 0, frames_ = 0, acks_ = 0, unknown_ = 0, queries_ = 0, timeouts_ = 0, writeErrors_ = 0;
 };

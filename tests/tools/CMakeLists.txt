@@ -5,7 +5,8 @@ add_awtrix_test(NAME system-build-tools COMMAND ${discover} "${tools}/system" TI
 add_awtrix_test(NAME tc002-install-tools COMMAND ${discover} "${tools}/tc002/install" TIMEOUT 300)
 add_awtrix_test(NAME tc002-mcu-bundle COMMAND ${discover} "${tools}/tc002/mcu")
 if(TARGET awtrix-tc002-mcu-prepare)
-  set_tests_properties(tc002-mcu-bundle PROPERTIES ENVIRONMENT "AWTRIX_MCU_PREPARE=$<TARGET_FILE:awtrix-tc002-mcu-prepare>")
+  set_tests_properties(tc002-mcu-bundle PROPERTIES ENVIRONMENT
+    "AWTRIX_MCU_PREPARE=$<TARGET_FILE:awtrix-tc002-mcu-prepare>;AWTRIX_MCU_ASSEMBLE=$<TARGET_FILE:awtrix-tc002-mcu-assemble>")
 endif()
 if(TARGET awtrix-linux AND TARGET tc002_mcu_prepare)
   add_awtrix_test(NAME tc002-mcu-runtime-prepare COMMAND "${Python3_EXECUTABLE}" "${tools}/tc002/mcu/test_prepare.py")

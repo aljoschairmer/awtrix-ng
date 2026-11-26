@@ -155,6 +155,7 @@ void SupervisedRuntime::applyPower(const tc002::PowerStatus& power) {
   if (power.batteryPercent < 0) return;
   rt.batteryPercent = static_cast<uint8_t>(power.batteryPercent);
   rt.batteryVoltage = power.batteryMillivolts >= 0 ? static_cast<float>(power.batteryMillivolts) / 1000.0f : 0.0f;
+  batteryMillivolts_ = power.batteryMillivolts;
   rt.lowBattery = isLowBattery(rt.batteryPercent, config_.lowBatteryThreshold);
   if (board_.hasBattery()) return;
   board_.setBatteryPresent(true);
@@ -200,6 +201,8 @@ void SupervisedRuntime::addFacts(DeviceFacts& facts) const {
 
 void SupervisedRuntime::writeMembers(api::JsonWriter& json) const {
   if (powerKnown_) json.member("usbPower", power_.usbPower);
+  if (batteryMillivolts_ >= 0) json.member("batteryMillivolts", batteryMillivolts_);
+  if (panelLoad_ >= 0) json.member("panelLoad", panelLoad_);
 }
 
 int SupervisedRuntime::wifiScan(int64_t nowMs, std::string& body) {

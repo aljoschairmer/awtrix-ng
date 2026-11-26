@@ -154,6 +154,9 @@ void brightnessAndGrade() {
   canvas.clear(0xFFFFFFu);
   board.show(canvas);
   require(black(state->frames.back()), "nothing lights before the runtime sets a brightness");
+  // The panel's lowest lit code: dimming keeps white at least there.
+  int floorCode = 1;
+  while (awtrix::Tc002Board::kPanelLight[floorCode] == 0) ++floorCode;
   int previous = 0;
   for (int requested = 0; requested <= 255; ++requested) {
     board.setBrightness(static_cast<uint8_t>(requested));
@@ -162,7 +165,7 @@ void brightnessAndGrade() {
     const int code = frame[0];
     require(frame[1] == code && frame[2] == code, "white keeps its channels equal");
     const int nearest = nearestCode(65535L * requested / 255);
-    require(code == (requested == 0 ? 0 : std::max(nearest, 50)),
+    require(code == (requested == 0 ? 0 : std::max(nearest, floorCode)),
             "white becomes the nearest measured level and dimming never turns it off");
     require(code >= previous, "panel codes never fall as brightness rises");
     previous = code;
@@ -287,8 +290,44 @@ void optionalTimingScope() {
 
 }
 
+void displayLoad() {
+  auto state = std::make_shared<State>();
+  awtrix::Tc002Board board(fake(state));
+  board.begin();
+  require(board.takeLoad() == -1, "no load before a frame is shown");
+  board.applyColorGrade(linearGrade());
+  board.setBrightness(255);
+  awtrix::Canvas canvas(52, 16);
+  board.show(canvas);
+  require(board.takeLoad() == 0, "a black frame draws no display load");
+  for (int y = 0; y < 16; ++y)
+    for (int x = 0; x < 52; ++x) canvas.setPixel(x, y, 0xFFFFFFu);
+  board.show(canvas);
+  require(board.takeLoad() == 1000, "full white at full brightness is the whole load");
+  board.show(canvas);
+  canvas.clear();
+  board.show(canvas);
+  require(board.takeLoad() == 500, "the load is the mean of the frames since the last report");
+  require(board.takeLoad() == -1, "each frame counts once");
+  for (int x = 0; x < 52; ++x) canvas.setPixel(x, 0, 0xFFFFFFu);
+  board.show(canvas);
+  board.setBrightness(40);
+  board.show(canvas);
+  const int dimmed = board.takeLoad();
+  require(dimmed > 0 && dimmed < 1000 / 16, "a dimmer row of white draws less than its share at full brightness");
+  // The bench run of 2026-11-04 measured its battery sag against this load.
+  board.applyColorGrade(awtrix::render::GradeParams{});
+  board.setBrightness(150);
+  for (int y = 0; y < 16; ++y)
+    for (int x = 0; x < 52; ++x) canvas.setPixel(x, y, 0xFFFFFFu);
+  board.show(canvas);
+  const int white150 = board.takeLoad();
+  require(white150 >= 580 && white150 <= 600, "full white at brightness 150 is about 591 per mille");
+}
+
 int main() {
   packingAndShutdown();
+  displayLoad();
   continuousPipelineAndStillContent();
   brightnessAndGrade();
   failuresCloseWithoutMoreWrites();

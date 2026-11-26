@@ -120,6 +120,12 @@ uint32_t chipKey(const Bytes& base,const Bytes& flash) {
 }
 }
 
+uint8_t extensionFeatures(const std::string& extension) {
+  const auto at=extension.find("AWMC");
+  require(at!=std::string::npos && extension.find("AWMC",at+1)==std::string::npos && extension.size()-at>=16,"MCU extension identity");
+  return static_cast<uint8_t>(extension[at+5]);
+}
+
 std::string assembleFirmware(const std::string& baseText,const std::string& extension) {
   require(baseText.size()==35840 && firmwareHash(baseText)==kBaseHash,"MCU base SHA-256 mismatch");
   require(extension.size()>256 && extension.size()<=4096,"MCU extension size");
@@ -131,9 +137,18 @@ std::string assembleFirmware(const std::string& baseText,const std::string& exte
   Bytes flash=original;
   flash.insert(flash.begin()+0x9c00,extra,0);
   std::copy(extension.begin(),extension.end(),flash.begin()+0x9c00);
-  for (unsigned i=0;i<4;++i) require(word(original,0x5de4+i*4)==0x10003ba0,"MCU dispatch table");
+  // Commands 0x05..0x08 (PCM, stream, identity) since build 13; 0x09..0x0b (LED driver table,
+  // tools/tc002/mcu/extension/registers.S) for an extension that declares feature 0x10.
+  const bool driverTable = (extensionFeatures(extension) & kFeatureDriverTable) != 0;
+  for (unsigned i=0;i<(driverTable ? 7u : 4u);++i) require(word(original,0x5de4+i*4)==0x10003ba0,"MCU dispatch table");
   for (const auto& entry : {std::pair<std::size_t,uint32_t>{0x5de4,0x10007a00},{0x5de8,0x10007b00},{0x5dec,0x10007b80},{0x5df0,0x10007bc0}})
     put(flash,entry.first,entry.second);
+  if (driverTable)
+    for (const auto& entry : {std::pair<std::size_t,uint32_t>{0x5df4,kDriverTableWriteEntry},{0x5df8,kDriverTableReadEntry},
+                              {0x5dfc,kDriverClearOverrideEntry}}) {
+      require(entry.second-0x10007a00U+16<=extension.size(),"MCU driver table entry outside the extension");
+      put(flash,entry.first,entry.second);
+    }
   put(flash,0x44,static_cast<uint32_t>(size)); put(flash,0x50,static_cast<uint32_t>(end)); put(flash,0x2008,static_cast<uint32_t>(size));
   put(flash,0x200e,crc16(flash,0x2000,0x200e),2);
   for (std::size_t i=0;i<size/512;++i) put(flash,0x2010+i*2,crc16(flash,0x2200+i*512,0x2400+i*512,static_cast<uint16_t>(i+1)),2);

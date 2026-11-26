@@ -108,6 +108,13 @@ int main() {
   check(!decodeSupervisorMessage("{\"v\":2,\"type\":\"bluetooth\",\"on\":\"yes\",\"error\":\"\"}", message),
         "bluetooth needs a boolean on");
 
+  check(encodePanelLoad(73) == "{\"v\":2,\"type\":\"panelLoad\",\"perMille\":73}", "panel load wire form");
+  check(decodeSupervisorMessage(encodePanelLoad(1000), message) && message.type == MessageType::PanelLoad &&
+            message.panelLoad == 1000, "panel load round trip");
+  check(encodePanelLoad(-1).empty() && encodePanelLoad(1001).empty(), "a panel load outside 0 to 1000 is not sent");
+  check(!decodeSupervisorMessage("{\"v\":2,\"type\":\"panelLoad\",\"perMille\":1001}", message),
+        "a panel load outside 0 to 1000 is refused");
+
 
   check(decodeSupervisorMessage(encodeWifi({"Home", "correct horse"}), message) &&
         message.type == MessageType::Wifi && message.wifi.ssid == "Home" &&

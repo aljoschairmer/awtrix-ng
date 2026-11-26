@@ -18,6 +18,7 @@ dist/
 /build/
 *.bin
 !/tools/tc002/mcu/release/extension.bin
+!/tools/tc002/mcu/extension/build13.bin
 !/tests/tc002/runtime/wake/*.bin
 *.elf
 *.o

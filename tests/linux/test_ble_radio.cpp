@@ -478,6 +478,49 @@ void pendingConnectOwnsScan() {
   check(fixture.sockets.scanRestarted(true, false), "completed outgoing connection restores the latest scan request");
 }
 
+// Linux 4.9 sets scan parameters of its own to find the peer of an L2CAP connect, which the
+// controller refuses while our raw scan runs (HCI 0x200b, status 0x12): the scan stops first.
+void legacyConnectPausesTheScan() {
+  Fixture fixture;
+  fixture.radio->scan(true, true, false);
+  fixture.sockets.commands.clear();
+  Address pad;
+  Address::parse("E4:17:D8:BF:0C:45", false, pad);
+  check(fixture.radio->connect(pad, 1) >= 0 && fixture.sockets.connectCalls == 1, "a gamepad connect starts while scanning");
+  check(fixture.sockets.commands == std::vector<Bytes>({Bytes({1, 0x0c, 0x20, 2, 0, 0})}),
+        "on Linux 4.9 the scan stops before the kernel's own connect scan");
+  fixture.sockets.commands.clear();
+  fixture.radio->scan(true, true, false);
+  fixture.radio->tick(fixture.now + 500);
+  check(fixture.sockets.commands.empty(), "and stays off while the connect runs");
+  fixture.dispatch(fixture.sockets.outgoing, POLLOUT);
+  check(fixture.connected.size() == 1 && fixture.sockets.scanRestarted(true, false),
+        "the finished connect brings the scan back");
+
+  Fixture modern(3, "6.8.0");
+  modern.radio->scan(true, true, false);
+  modern.sockets.commands.clear();
+  check(modern.radio->connect(pad, 1) >= 0 && modern.sockets.commands.empty(), "newer kernels keep scanning during a connect");
+}
+
+// EINVAL is the kernel's word for a refused HCI command (status 0x12). The kernel may still go on
+// to connect, so the request stays pending for the link that arrives at the listener.
+void invalidArgumentConnectIsRetried() {
+  Fixture fixture;
+  Address pad;
+  Address::parse("E4:17:D8:BF:0C:45", false, pad);
+  const int id = fixture.radio->connect(pad, 1);
+  fixture.sockets.connectError = EINVAL;
+  fixture.dispatch(fixture.sockets.outgoing, POLLOUT);
+  check(fixture.failedConnections.empty() && fixture.connected.empty(), "a connect refused with EINVAL stays pending");
+  fixture.sockets.connectError = 0;
+  fixture.now += 1000;
+  fixture.radio->tick(fixture.now);
+  check(fixture.sockets.connectCalls == 2, "and is tried again after the retry delay");
+  fixture.dispatch(fixture.sockets.outgoing, POLLOUT);
+  check(fixture.connected == std::vector<int>({id}), "the retry connects under the original id");
+}
+
 void disabledScanStaysOff() {
   Fixture fixture;
   fixture.radio->scan(true, true, true);
@@ -1134,6 +1177,8 @@ int main() {
   cancelledQueueHeadLetsTheNextRequestRun();
   incomingRestoresScan();
   pendingConnectOwnsScan();
+  legacyConnectPausesTheScan();
+  invalidArgumentConnectIsRetried();
   disabledScanStaysOff();
   directConnectionPreservesPhone();
   modernKernelUsesL2cap();

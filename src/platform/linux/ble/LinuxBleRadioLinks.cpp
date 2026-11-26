@@ -15,9 +15,12 @@ using namespace linux_detail;
 namespace {
 
 // EBUSY is the controller turning the connect command down for the moment (Command Disallowed).
+// EINVAL is a command the controller refused (Invalid HCI Command Parameters), such as the scan
+// parameters of the kernel's connect scan; the kernel may go on connecting, and its link then
+// reaches the request still waiting here.
 bool retryable(int error) {
   return error == ENOSYS || error == EIO || error == ECONNRESET || error == ECONNABORTED || error == EPROTO ||
-         error == EBUSY;
+         error == EBUSY || error == EINVAL;
 }
 
 }
@@ -174,6 +177,9 @@ bool LinuxBleRadio::startConnect(int id, Link& link) {
   remote.cid = kAttCid;
   remote.bdaddrType = link.peer.random ? kLeRandom : kLePublic;
   std::copy(link.peer.b.begin(), link.peer.b.end(), remote.bdaddr);
+  // 4.9 scans for the peer with parameters of its own, which the controller refuses while our scan
+  // runs (HCI 0x200b, status 0x12). applyScan() leaves it off until the connect ends.
+  if (legacyKernel_ && scanWanted_) hciCommand(0x200c, {0x00, 0x00});
   if (::connect(link.fd, reinterpret_cast<sockaddr*>(&remote), sizeof remote) == 0 || errno == EINPROGRESS) return true;
   return failed();
 }

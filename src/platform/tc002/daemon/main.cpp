@@ -26,6 +26,7 @@
 #include "platform/tc002/daemon/Log.h"
 #include "platform/tc002/daemon/Autostart.h"
 #include "platform/tc002/daemon/BtService.h"
+#include "platform/tc002/daemon/McuDriverControl.h"
 #include "platform/tc002/daemon/McuService.h"
 #include "platform/tc002/daemon/Options.h"
 #include "platform/tc002/daemon/PropertyWorkspace.h"
@@ -412,6 +413,7 @@ int runDaemon(const DaemonOptions& options) {
     if (runtimeChild) runtimeChild->bluetoothStatus(status);
   });
   links.bluetooth = [&](bool on) { bluetooth.request(on); };
+  links.panelLoad = [&](int perMille) { mcu.setPanelLoad(perMille, posix::monotonicMs()); };
   connectMicrophone(links, mcu, loop, update);
   runtimeOptions.bluetooth = true;
   RuntimeChild runtime(state, lease, runtimeOptions, links);
@@ -435,6 +437,7 @@ int runDaemon(const DaemonOptions& options) {
     json.endObject();
     return out;
   });
+  addDriverRegisterCommands(control, mcu);
   control.add("restart-runtime", [&](std::string_view) {
     Log::line("control", "runtime restart requested");
     runtime.restart(posix::monotonicMs());

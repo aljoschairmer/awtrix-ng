@@ -141,6 +141,7 @@ add_library(tc002d_core STATIC
   "${TC002D_DIR}/EventLoop.cpp"
   "${TC002D_DIR}/HardwareId.cpp"
   "${TC002D_DIR}/HardwareLease.cpp"
+  "${TC002D_DIR}/McuDriverControl.cpp"
   "${TC002D_DIR}/McuFrame.cpp"
   "${TC002D_DIR}/McuPcm.cpp"
   "${TC002D_DIR}/McuStream.cpp"
@@ -176,6 +177,9 @@ target_link_libraries(tc002_mcu_prepare PRIVATE tc002_mcu_firmware LibLZMA::LibL
 # Standalone host/bench test wrapper; production reuses awtrix-linux's TLS runtime.
 add_executable(awtrix-tc002-mcu-prepare "${TC002_DIR}/mcu/prepare_cli.cpp")
 target_link_libraries(awtrix-tc002-mcu-prepare PRIVATE tc002_mcu_prepare)
+# Host tool for MCU extension releases: image size and SHA-256 for the manifest.
+add_executable(awtrix-tc002-mcu-assemble "${TC002_DIR}/mcu/assemble_cli.cpp")
+target_link_libraries(awtrix-tc002-mcu-assemble PRIVATE tc002_mcu_prepare tc002_mcu_firmware awtrix_warnings)
 endif()
 add_executable(awtrix-tc002-dhcp-callback "${TC002D_DIR}/ip/DhcpCallbackMain.cpp")
 set_target_properties(awtrix-tc002-dhcp-callback PROPERTIES OUTPUT_NAME dhcp-callback)

@@ -2,7 +2,12 @@
 #include "platform/tc002/daemon/BatteryGauge.h"
 #include "support.h"
 
+#include <array>
+#include <cmath>
+#include <cstdlib>
+
 using awtrix::tc002d::BatteryGauge;
+using awtrix::tc002d::LoadTracker;
 using tc002d_test::check;
 
 namespace {
@@ -80,7 +85,8 @@ void discharging() {
   const int start = gauge.percent();
   check(start > 0 && start < 100, "a partly charged cell on battery");
   now = feed(gauge, 4000, false, kWindow, now);
-  check(gauge.percent() == start, "a lighter load does not raise it");
+  check(gauge.percent() == start, "a lighter load for a window does not raise it");
+  now = feed(gauge, 3950, false, kWindow, now);
   now = feed(gauge, 3700, false, kWindow / 2, now);
   check(gauge.percent() == start, "a load for less than half the window is filtered out");
   now = feed(gauge, 3950, false, kWindow, now);
@@ -99,13 +105,21 @@ void usbChanges() {
 
   now = feed(gauge, 4100, true, kWindow, now);
   check(gauge.percent() == 100, "charged");
-  now = feed(gauge, 3900, false, kWindow - 1, now);
-  check(gauge.percent() == 100, "unplugging holds the value until the window is full");
+  now = feed(gauge, 3900, false, static_cast<int>(BatteryGauge::kProvisionalReadings) - 1, now);
+  check(gauge.percent() == 100, "unplugging holds the value for the first readings");
   now = feed(gauge, 3900, false, 1, now);
   const int discharged = gauge.percent();
-  check(discharged < 100, "then it follows the discharge");
+  check(discharged == BatteryGauge::estimate(3900, false), "then their median lowers it, long before a full window");
+  now = feed(gauge, 3900, false, kWindow, now);
+  check(gauge.percent() == discharged, "and the full window agrees");
   feed(gauge, 3900, true, kWindow, now);
   check(gauge.percent() >= discharged, "plugging in never lowers it");
+
+  BatteryGauge low;
+  now = feed(low, 3900, true, kWindow, 0);
+  const int charging = low.percent();
+  now = feed(low, 4000, false, static_cast<int>(BatteryGauge::kProvisionalReadings), now);
+  check(low.percent() == charging, "the readings after unplugging never raise it");
 }
 
 void startHolds() {
@@ -116,6 +130,148 @@ void startHolds() {
   check(gauge.percent() == first, "the first sample holds while the boot load fills the window");
   feed(gauge, 4050, false, kWindow / 2 + 1, now);
   check(gauge.percent() == first, "and the boot load does not count once the window is full");
+}
+
+void provisionalStart() {
+  // The first sample came while Wi-Fi connected at boot; the cell was fuller than it said.
+  BatteryGauge gauge;
+  int64_t now = feed(gauge, 3700, false, 1, 0);
+  const int first = gauge.percent();
+  now = feed(gauge, 4000, false, kWindow - 1, now);
+  check(gauge.percent() == BatteryGauge::estimate(4000, false) && gauge.percent() > first,
+        "the first full window replaces a provisional first sample, also upwards");
+  feed(gauge, 4000, false, 3 * kWindow, now);
+  check(gauge.percent() == BatteryGauge::estimate(4000, false), "and holds after that");
+}
+
+void slowRise() {
+  BatteryGauge gauge;
+  int64_t now = feed(gauge, 3950, false, kWindow, 0);
+  const int start = gauge.percent();
+  now = feed(gauge, 3960, false, 4 * kWindow, now);
+  check(gauge.percent() == start, "a reading less than the margin above does not raise it");
+  now = feed(gauge, 4050, false, kWindow + kWindow / 2, now);
+  check(gauge.percent() == start + 1, "a whole window clearly above raises it by one");
+  now = feed(gauge, 4050, false, 2 * kWindow, now);
+  check(gauge.percent() == start + 3, "then by one per window");
+  feed(gauge, 3900, false, kWindow, now);
+  check(gauge.percent() == BatteryGauge::estimate(3900, false), "a lower reading still lowers it at once");
+}
+
+// A cell that sags 0.5 mV per per mille of display load, against kReferenceLoad.
+// A cell that sags by sag mV per per mille of display load (a TC002 measured 0.063 to 0.071).
+int sagged(int restingAtReference, int load, double sag = 0.07) {
+  return restingAtReference - static_cast<int>(std::lround(sag * (load - BatteryGauge::kReferenceLoad)));
+}
+
+void loadCompensation() {
+  BatteryGauge fresh;
+  check(fresh.sag() == BatteryGauge::kDefaultSag, "the measured sag applies before anything is learned");
+  BatteryGauge learning, blind;
+  int64_t now = 0;
+  for (int i = 0; i < 3 * kWindow; ++i, now += kStep) {
+    const int load = i % 3 ? 450 : 50;  // a bright app shows most of the time, the clock in between
+    learning.sample(sagged(3950, load), false, now, load);
+    blind.sample(sagged(3950, load), false, now);
+  }
+  check(learning.sag() > 0.065 && learning.sag() < 0.075, "the sag is learned from load steps");
+  check(learning.percent() == BatteryGauge::estimate(3950, false),
+        "with the sag learned the bright app does not count against the charge");
+  check(blind.percent() < learning.percent(), "without the load the bright app lowers it");
+  check(learning.lastCompensated() == 3950, "readings move to the reference load");
+
+  BatteryGauge charging;
+  now = 0;
+  for (int i = 0; i < 2 * kWindow; ++i, now += kStep) {
+    const int load = i % 2 ? 450 : 50;
+    charging.sample(sagged(3950, load), true, now, load);
+  }
+  check(charging.sag() == BatteryGauge::kDefaultSag && charging.lastCompensated() == sagged(3950, 450),
+        "on USB the charger holds the voltage: nothing is learned or moved");
+
+  BatteryGauge steady;
+  now = feed(steady, 3950, false, kWindow, 0);
+  for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 3) - 1, false, now, 60 + (i % 2) * 10);
+  check(steady.sag() == BatteryGauge::kDefaultSag, "small load changes teach nothing");
+  for (int i = 0; i < kWindow; ++i, now += kStep) steady.sample(3950 + (i % 2) * 40, false, now, i % 2 ? 450 : 50);
+  check(steady.sag() == BatteryGauge::kMinSag, "a voltage that rises with the load is no sag: the lower bound holds");
+
+  BatteryGauge steep;
+  now = 0;
+  for (int i = 0; i < kWindow; ++i, now += kStep) steep.sample(sagged(3950, i % 2 ? 450 : 50, 0.2), false, now, i % 2 ? 450 : 50);
+  check(steep.sag() == BatteryGauge::kMaxLearnedSag, "a sag far above the measured one stops at the upper bound");
+}
+
+void steadyLoad() {
+  LoadTracker tracker;
+  check(tracker.steady(0) == -1 && tracker.last(0) == -1, "no load before a report");
+  tracker.report(120, 0);
+  check(tracker.last(2000) == 120 && tracker.steady(2000) == -1, "a new load is not steady yet");
+  tracker.report(130, 4000);
+  check(tracker.steady(LoadTracker::kSteadyMs) == 130, "small changes keep it steady once it held for 8 s");
+  tracker.report(400, 10000);
+  check(tracker.steady(16000) == -1 && tracker.steady(18000) == 400, "a step starts the wait again");
+  check(tracker.last(18000 + LoadTracker::kStaleMs + 1) == -1, "without fresh reports the load is unknown");
+}
+
+// The MCU's reading is about 4 s old and the load flips every 20 s: right after a flip the reading
+// still belongs to the old load.
+void lateReadings() {
+  const auto loadAt = [](int64_t t) { return (t / 20000) % 2 ? 450 : 50; };
+  BatteryGauge waiting, eager;
+  LoadTracker tracker;
+  for (int64_t t = 0; t <= 40 * 60000; t += 2000) {
+    tracker.report(loadAt(t), t);
+    if (t % 10000 || t < 10000) continue;
+    const int reading = sagged(3950, loadAt(t - 4000));
+    waiting.sample(reading, false, t, tracker.steady(t));
+    eager.sample(reading, false, t, tracker.last(t));
+  }
+  check(waiting.sag() > 0.06 && waiting.sag() < 0.08, "a steady load gives the real sag");
+  check(eager.sag() <= 0.05, "pairing every reading with the newest load learns far too little");
+  check(waiting.percent() == BatteryGauge::estimate(3950, false), "and the charge holds through the flips");
+}
+
+
+// The bench run on a TC002 (2026-11-04): white at brightness 150 (591 per mille) and the apps
+// (about 170) took turns every 20 s; the reading sat 30 mV lower in white, with about 8 mV of
+// noise per reading. jitter: how far the apps' load moves between two 2 s reports.
+BatteryGauge benchRun(int jitter) {
+  BatteryGauge gauge;
+  LoadTracker tracker;
+  uint32_t seed = 12345;
+  const auto noise = [&seed](int span) {
+    seed = seed * 1103515245u + 12345u;
+    return static_cast<int>((seed >> 16) % static_cast<uint32_t>(2 * span + 1)) - span;
+  };
+  const auto loadAt = [&](int64_t t) { return (t / 20000) % 2 ? 170 + noise(jitter) : 591; };
+  int load = 591;
+  for (int64_t t = 0; t <= 20 * 60000; t += 1000) {
+    if (t % 2000 == 0) {
+      load = loadAt(t);
+      tracker.report(load, t);
+    }
+    if (t % 10000 || t < 10000) continue;
+    const int truth = 4080 - static_cast<int>(0.07 * (((t - 3000) / 20000) % 2 ? 170 : 591)) - static_cast<int>(t / 20000);
+    gauge.sample(truth + noise(8), false, t, tracker.steady(t));
+  }
+  return gauge;
+}
+
+void benchTimeline() {
+  for (int jitter : {0, 25}) {
+    const BatteryGauge gauge = benchRun(jitter);
+    check(gauge.sag() > 0.056 && gauge.sag() < 0.084, "the bench run learns its 30 mV over 421 per mille");
+    std::array<BatteryGauge::SagPair, 9> pairs{};
+    const std::size_t count = gauge.sagPairs(pairs);
+    bool alternating = count == pairs.size();
+    for (std::size_t i = 0; i < count; ++i) {
+      alternating = alternating && std::abs(pairs[i].toLoad - pairs[i].fromLoad) > 300 &&
+                    (i == 0 || pairs[i].atMs > pairs[i - 1].atMs);
+    }
+    if (jitter == 0) check(alternating, "the status pairs are the white and apps readings, oldest first");
+    check(gauge.sagRejected() == 0, "no pair of the bench run is too steep to be sag");
+  }
 }
 
 void spacingAndUnknown() {
@@ -137,6 +293,12 @@ int main() {
   discharging();
   usbChanges();
   startHolds();
+  provisionalStart();
+  slowRise();
+  loadCompensation();
+  steadyLoad();
+  lateReadings();
   spacingAndUnknown();
+  benchTimeline();
   return tc002d_test::finish("tc002d battery gauge");
 }

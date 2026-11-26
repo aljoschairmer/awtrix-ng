@@ -447,6 +447,9 @@ void RuntimeChild::dispatch(const std::string& datagram, int64_t nowMs) {
       if (links_.bluetooth) links_.bluetooth(message.bluetooth.on);
       else bluetoothStatus(tc002::BluetoothStatus{false, "this supervisor has no Bluetooth"});
       break;
+    case MessageType::PanelLoad:
+      if (links_.panelLoad) links_.panelLoad(message.panelLoad);
+      break;
     case MessageType::UpdateReady:
       Log::line("runtime", "update %s (counter %llu) handed off", message.updateReady.release.c_str(),
                 static_cast<unsigned long long>(message.updateReady.counter));
