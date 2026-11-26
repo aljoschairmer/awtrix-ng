@@ -18,6 +18,8 @@ struct Caps {
   bool url = false;
   bool effect = false;
   bool clip = false;
+  // The radio can play static and fade a station in (radio.can()).
+  bool radioStatic = false;
 };
 
 // The router resolves stored files and decides whether an alert permits a new one-shot.

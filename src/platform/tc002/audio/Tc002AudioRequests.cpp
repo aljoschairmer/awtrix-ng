@@ -348,6 +348,11 @@ bool Tc002AudioSink::oneShotGroup(sound::Group& group) const {
 
 DispatchResult Tc002AudioSink::playStream(const std::string& url, const std::string& label,
                                           DispatchDetail& detail) {
+  return playStreamWith(url, label, radio::StreamOptions{}, detail);
+}
+
+DispatchResult Tc002AudioSink::playStreamWith(const std::string& url, const std::string& label,
+                                              const radio::StreamOptions& options, DispatchDetail& detail) {
   (void)label;
   if (!net::parseUrl(url)) {
     detail.clear();
@@ -368,9 +373,11 @@ DispatchResult Tc002AudioSink::playStream(const std::string& url, const std::str
   {
     std::lock_guard<std::mutex> lock(mutex_);
     ++request_.streamSeq;
-    report_.errorNew = report_.titleNew = false;
+    report_.errorNew = report_.titleNew = report_.statusNew = false;
     request_.streamWanted = true;
     request_.url = std::move(streamUrl);
+    request_.streamOptions = options;
+    request_.staticLevel = options.staticLevel;
     ++request_.effectsStopSeq;
     request_.effects.clear();
     effectsPending_ = 0;
@@ -383,6 +390,27 @@ DispatchResult Tc002AudioSink::playStream(const std::string& url, const std::str
   return DispatchResult::Ok;
 }
 
+// Static alone takes the speaker like a station does; under a station it only changes its level.
+void Tc002AudioSink::setRadioStatic(uint8_t level) {
+  if (level > 100) level = 100;
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    if (request_.staticLevel == level) return;
+    request_.staticLevel = level;
+    if (level > 0 && !request_.streamWanted) {
+      ++request_.effectsStopSeq;
+      request_.effects.clear();
+      effectsPending_ = 0;
+    }
+  }
+  wake();
+}
+
+bool Tc002AudioSink::radioStatic() const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return request_.staticLevel > 0;
+}
+
 void Tc002AudioSink::holdStream(bool held) {
   {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -392,14 +420,16 @@ void Tc002AudioSink::holdStream(bool held) {
   wake();
 }
 
+// Stops the station and any static with it.
 void Tc002AudioSink::stopStream() {
   {
     std::lock_guard<std::mutex> lock(mutex_);
-    if (!request_.streamWanted) return;
+    if (!request_.streamWanted && request_.staticLevel == 0) return;
     request_.streamWanted = false;
     request_.url.reset();
+    request_.staticLevel = 0;
     ++request_.streamSeq;
-    report_.errorNew = report_.titleNew = false;
+    report_.errorNew = report_.titleNew = report_.statusNew = false;
   }
   wake();
 }

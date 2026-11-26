@@ -213,11 +213,16 @@ void AudioRouter::adoptPcm(const Spec& spec) {
 // ends too. Alerts keep their place.
 DispatchResult AudioRouter::playStream(const std::string& url, const std::string& label,
                                        DispatchDetail& detail) {
+  return playStream(url, label, radio::StreamOptions{}, detail);
+}
+
+DispatchResult AudioRouter::playStream(const std::string& url, const std::string& label,
+                                       const radio::StreamOptions& options, DispatchDetail& detail) {
   if (!pcm_) {
     detail.message = "no audio output";
     return DispatchResult::Unavailable;
   }
-  const DispatchResult result = pcm_->playStream(url, label, detail);
+  const DispatchResult result = pcm_->playStreamWith(url, label, options, detail);
   if (result == DispatchResult::Ok) {
     if (oneShotGroup_ == Group::App) setRepeating(false);
     refreshStatus();
@@ -251,6 +256,12 @@ void AudioRouter::stop(Stop what, const std::string& script) {
       break;
   }
   refreshStatus();
+}
+
+bool AudioRouter::setRadioStatic(uint8_t level) {
+  if (!pcm_ || !pcm_->caps().radio) return false;
+  pcm_->setRadioStatic(level);
+  return true;
 }
 
 // Only the PCM output reads files while it plays: melodies are read whole before they start.

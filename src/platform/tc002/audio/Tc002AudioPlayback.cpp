@@ -123,6 +123,9 @@ void Tc002AudioSink::afterPump() {
       if (request_.loopSeq == playingLoopSeq_ && !loopHeld_) request_.loop.clear();
     } else if (was == Playing::Stream) {
       std::string text;
+      // The source's last word (a format it cannot play, say) goes out before the source does.
+      radio::Status last;
+      if (stream_ && !staticOnly_ && stream_->takeStatus(last)) publishStatus(last);
       const bool explained = stream_ && stream_->takeError(text);
       stream_ = nullptr;
       bool wanted;
@@ -162,10 +165,13 @@ void Tc002AudioSink::afterPump() {
     }
     if (streamWanted) publishError("speaker unavailable");
   }
-  if (stream_) {
+  if (stream_ && !staticOnly_) {
     std::string text;
     if (stream_->takeError(text)) publishError(text);
     if (stream_->takeTitle(text)) publishTitle(text);
+    radio::Status status;
+    if (stream_->takeStatus(status)) publishStatus(status);
+    bufferPercent_.store(status.bufferPercent);
     bufferBytes_.store(stream_->bufferBytes());
     starvedMs_.store(stream_->starvedMs());
     decodeUs_.store(stream_->decodeUs());

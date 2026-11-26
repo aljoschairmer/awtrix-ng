@@ -21,6 +21,12 @@ struct Spec {
   int number = -1;
   bool loop = false;
   bool nextBar = false;
+  // A station only: the name to show for an address, the caller's id for it, how long it fades
+  // in (ms) and how loud the static ("noise") under its wait is (0..100); -1 where not given.
+  std::string label;
+  std::string id;
+  int fadeMs = -1;
+  int staticLevel = -1;
 };
 
 constexpr std::size_t kMaxChoices = 4;

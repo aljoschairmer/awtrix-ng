@@ -7,6 +7,7 @@
 #include "core/effects/IEffect.h"
 #include "core/mirror/MirrorStatus.h"
 #include "core/net/LinkStatus.h"
+#include "core/radio/RadioStatus.h"
 #include "platform_input/Runtime.h"
 
 namespace awtrix {
@@ -45,6 +46,10 @@ struct RuntimeState : PlatformInputState {
   std::string radioStation;
   std::string radioTitle;
   std::string radioError;
+  // What the station is doing (phase, codec, why it failed) where the output reports it, and
+  // the id radio.play() gave it; "" when anyone else started it.
+  radio::Status radio;
+  std::string radioId;
   uint8_t brightnessActual = 120;
   std::string globalOverlay;
   EffectSettings globalOverlaySettings;

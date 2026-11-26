@@ -541,7 +541,26 @@ void appendAudioJson(std::string& out, CoreEngine& engine) {
   out += ",\"underruns\":" + std::to_string(engine.radioUnderruns());
   out += ",\"decodeUs\":" + std::to_string(engine.radioDecodeUs());
   out += ",\"starvedMs\":" + std::to_string(engine.radioStarvedMs());
-  out += ",\"bufferBytes\":" + std::to_string(engine.radioBufferBytes()) + "}";
+  out += ",\"bufferBytes\":" + std::to_string(engine.radioBufferBytes());
+  // What the station is doing, where the output reports it (the TC002); idle elsewhere.
+  const radio::Status& status = runtime.radio;
+  out += ",\"state\":";
+  appendJsonString(out, radio::phaseName(status.phase));
+  out += ",\"fault\":";
+  if (status.fault == radio::Fault::None) out += "null";
+  else appendJsonString(out, radio::faultName(status.fault));
+  out += ",\"httpStatus\":" + std::to_string(status.httpStatus);
+  out += ",\"codec\":";
+  appendJsonString(out, status.codec);
+  out += ",\"bitrate\":" + std::to_string(status.bitrateKbps);
+  out += ",\"sampleRate\":" + std::to_string(status.sampleRate);
+  out += ",\"channels\":" + std::to_string(status.channels);
+  out += ",\"stationName\":";
+  appendJsonString(out, status.stationName);
+  out += ",\"bufferPercent\":" + std::to_string(status.bufferPercent);
+  out += ",\"noise\":";
+  out += engine.audio().radioNoise() ? "true" : "false";
+  out += "}";
   appendGroup(out, "app", engine.audio().appStatus());
   appendGroup(out, "alert", engine.audio().alertStatus());
   // stationsJson() hands back a whole document; splice out just the array it contains.

@@ -103,17 +103,25 @@ bool Tc002AudioSink::analysis(int64_t nowMs, audio::FrameStats& out) {
 // Render thread: the audio thread parks its news in report_ and never touches the engine.
 void Tc002AudioSink::tick(int64_t nowMs) {
   urls_.tick(nowMs);
+  // The buffer level changes all the time; it is read, never announced.
+  engine_.state().runtime().radio.bufferPercent = bufferPercent_.load();
   Report news;
   {
     std::unique_lock<std::mutex> lock(mutex_, std::try_to_lock);
     if (!lock.owns_lock() || report_.seq == seenReport_) return;
     seenReport_ = report_.seq;
     news = std::move(report_);
-    if (news.streamSeq != request_.streamSeq) news.errorNew = news.titleNew = false;
+    if (news.streamSeq != request_.streamSeq) news.errorNew = news.titleNew = news.statusNew = false;
     report_ = Report();
     report_.seq = seenReport_;
   }
   RuntimeState& runtime = engine_.state().runtime();
+  if (news.statusNew) {
+    const uint8_t buffer = runtime.radio.bufferPercent;
+    runtime.radio = news.status;
+    runtime.radio.bufferPercent = buffer;
+    if (!news.errorNew && !news.titleNew) engine_.state().emit(StateEvent::AudioChanged);
+  }
   if (news.errorNew) {
     runtime.radioError = news.error;
     runtime.radioPlaying = news.error.empty() && news.streaming;
@@ -145,6 +153,15 @@ void Tc002AudioSink::publishTitle(const std::string& title) {
   report_.title = title;
   report_.titleNew = true;
   report_.streaming = streaming;
+  ++report_.seq;
+}
+
+void Tc002AudioSink::publishStatus(const radio::Status& status) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  if (request_.streamSeq != playingStreamSeq_) return;
+  report_.streamSeq = playingStreamSeq_;
+  report_.status = status;
+  report_.statusNew = true;
   ++report_.seq;
 }
 
