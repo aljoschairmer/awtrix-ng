@@ -4,6 +4,8 @@
 #include <cctype>
 #include <cstdlib>
 
+#include "core/render/TextEncoding.h"
+
 namespace awtrix {
 namespace radio {
 
@@ -120,7 +122,7 @@ bool parseResponseHead(const std::string& raw, ResponseHead& out) {
     } else if (key == "content-type") {
       out.contentType = toLower(value);
     } else if (key == "icy-name") {
-      out.stationName = value;
+      out.stationName = text::fromStreamBytes(value);  // often Latin-1
     }
   }
   return out.status != 0;

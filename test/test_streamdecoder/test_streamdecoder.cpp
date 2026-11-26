@@ -80,6 +80,51 @@ void test_plays_mp3() {
   TEST_ASSERT_TRUE(d.bitrateKbps() > 100 && d.bitrateKbps() < 160);
 }
 
+// Where a station is joined: the first MPEG-1 Layer III frame whose main data begins in the frames
+// before it (main_data_begin > 0), as almost every frame of a live stream does.
+std::size_t frameLeaningBack(const uint8_t* data, std::size_t size) {
+  static const int kKbps[] = {0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320};
+  static const int kRates[] = {44100, 48000, 32000};
+  for (std::size_t at = 0; at + 6 < size;) {
+    const uint8_t* h = data + at;
+    const int bitrate = h[2] >> 4, rate = (h[2] >> 2) & 3;
+    if (h[0] != 0xff || (h[1] & 0xfe) != 0xfa || bitrate < 1 || bitrate > 14 || rate > 2) {
+      ++at;
+      continue;
+    }
+    const std::size_t side = at + 4 + ((h[1] & 1) ? 0 : 2);
+    if (((data[side] << 1) | (data[side + 1] >> 7)) > 0) return at;
+    at += 144000 * kKbps[bitrate] / kRates[rate] + ((h[2] >> 1) & 1);
+  }
+  return 0;
+}
+
+// Joined mid-stream with the ring already full: the first frame has nothing to play (its main
+// data was sent before the clock came in), which is no reason to give the station up.
+void test_plays_mp3_joined_mid_stream() {
+  const uint8_t* clip = mp3vectors::ksine_stereo_128k_mp3;
+  const std::size_t size = sizeof mp3vectors::ksine_stereo_128k_mp3;
+  const std::size_t join = frameLeaningBack(clip, size);
+  TEST_ASSERT_TRUE(join > 0);
+  const std::vector<uint8_t> live(clip + join, clip + size);
+  radio::StreamDecoder d;
+  d.restart("audio/mpeg");
+  auto input = ring();
+  std::size_t at = 0;
+  fill(input, live.data(), live.size(), at);
+  TEST_ASSERT_TRUE(input.size() > radio::kUndecodableAfterBytes);
+  Block b;
+  int data = 0;
+  for (int i = 0; i < 60; ++i) {
+    const Step step = d.next(input, i, b);
+    TEST_ASSERT_NOT_EQUAL_MESSAGE(Step::Error, step, d.error().c_str());
+    if (step == Step::Data && !b.synthetic) ++data;
+    fill(input, live.data(), live.size(), at);
+  }
+  TEST_ASSERT_TRUE(data > 10);
+  TEST_ASSERT_TRUE(d.playing());
+}
+
 void test_fades_a_new_station_in() {
   radio::StreamDecoder d;
   radio::StreamOptions o;
@@ -197,6 +242,7 @@ int main() {
   RUN_TEST(test_waits_for_the_preroll);
   RUN_TEST(test_plays_aac_labelled_as_mpeg);
   RUN_TEST(test_plays_mp3);
+  RUN_TEST(test_plays_mp3_joined_mid_stream);
   RUN_TEST(test_fades_a_new_station_in);
   RUN_TEST(test_static_fills_the_wait_and_then_gives_way);
   RUN_TEST(test_static_alone);
